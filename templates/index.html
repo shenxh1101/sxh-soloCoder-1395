@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多门店员工排班系统</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>🏪 多门店员工排班系统</h1>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="openGenerateModal()">自动排班</button>
+                <button class="btn btn-success" onclick="exportExcel()">导出Excel</button>
+                <button class="btn btn-info" onclick="sendEmail()">发送邮件</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <h3>📅 日期范围</h3>
+                    <div class="date-picker-group">
+                        <label>开始日期</label>
+                        <input type="date" id="startDate">
+                    </div>
+                    <div class="date-picker-group">
+                        <label>结束日期</label>
+                        <input type="date" id="endDate">
+                    </div>
+                    <button class="btn btn-block btn-secondary" onclick="loadSchedules()">刷新排班</button>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>🏬 门店筛选</h3>
+                    <select id="storeFilter" onchange="loadSchedules()">
+                        <option value="">全部门店</option>
+                    </select>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>👥 员工列表</h3>
+                    <div class="employee-list" id="employeeList">
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>📊 快捷操作</h3>
+                    <button class="btn btn-block btn-warning" onclick="showSummary()">查看汇总表</button>
+                    <button class="btn btn-block btn-danger" onclick="showWorkhours()">工时统计</button>
+                </div>
+
+                <div class="sidebar-section legend">
+                    <h3>📌 图例说明</h3>
+                    <div class="legend-item">
+                        <span class="legend-color senior"></span>
+                        <span>高级员工</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color junior"></span>
+                        <span>初级员工</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color conflict"></span>
+                        <span>冲突/警告</span>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="content-area">
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchTab('calendar')" id="tab-calendar">日历视图</button>
+                    <button class="tab-btn" onclick="switchTab('summary')" id="tab-summary">汇总表</button>
+                    <button class="tab-btn" onclick="switchTab('workhours')" id="tab-workhours">工时统计</button>
+                </div>
+
+                <div class="tab-content active" id="content-calendar">
+                    <div id="calendar"></div>
+                </div>
+
+                <div class="tab-content" id="content-summary">
+                    <div class="summary-container" id="summaryContainer">
+                        <p class="empty-tip">请选择日期范围后点击"查看汇总表"</p>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="content-workhours">
+                    <div class="workhours-container" id="workhoursContainer">
+                        <p class="empty-tip">请点击"工时统计"查看本月工时情况</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div class="modal" id="generateModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>自动排班</h3>
+                <span class="close" onclick="closeGenerateModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>开始日期</label>
+                    <input type="date" id="genStartDate">
+                </div>
+                <div class="form-group">
+                    <label>结束日期</label>
+                    <input type="date" id="genEndDate">
+                </div>
+                <p class="tip">系统将根据员工可用时间、技能等级和门店需求自动生成排班。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeGenerateModal()">取消</button>
+                <button class="btn btn-primary" onclick="generateSchedule()">生成排班</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>编辑排班</h3>
+                <span class="close" onclick="closeEditModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editScheduleId">
+                <div class="form-group">
+                    <label>员工</label>
+                    <select id="editEmployee"></select>
+                </div>
+                <div class="form-group">
+                    <label>门店</label>
+                    <select id="editStore"></select>
+                </div>
+                <div class="form-group">
+                    <label>日期</label>
+                    <input type="date" id="editDate">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>开始时间</label>
+                        <input type="time" id="editStartTime">
+                    </div>
+                    <div class="form-group">
+                        <label>结束时间</label>
+                        <input type="time" id="editEndTime">
+                    </div>
+                </div>
+                <div id="conflictWarning" class="conflict-warning" style="display:none;">
+                    <h4>⚠️ 冲突检测</h4>
+                    <ul id="conflictList"></ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-danger" onclick="deleteSchedule()" id="deleteBtn">删除</button>
+                <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button class="btn btn-primary" onclick="saveSchedule()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/zh-cn.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
