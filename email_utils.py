@@ -4,7 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from datetime import datetime
-from models import Store
+from models import Store, EmailLog
 from extensions import db
 import export_utils
 
@@ -37,7 +37,7 @@ def send_schedule_email(start_date_str, end_date_str, store_id=None):
 
 def _send_single_store_email(store, start_date_str, end_date_str):
     if not store.manager_email:
-        return {
+        result = {
             'store_id': store.id,
             'store_name': store.name,
             'manager_email': None,
@@ -46,6 +46,8 @@ def _send_single_store_email(store, start_date_str, end_date_str):
             'message': '未设置店长邮箱',
             'sent_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
+        _log_email(store, start_date_str, end_date_str, 'no_email', '未设置店长邮箱')
+        return result
 
     try:
         excel_path = export_utils.export_to_excel(start_date_str, end_date_str, store_id=store.id, mode='week')
@@ -89,6 +91,7 @@ def _send_single_store_email(store, start_date_str, end_date_str):
         }
 
     except Exception as e:
+        _log_email(store, start_date_str, end_date_str, 'error', str(e))
         return {
             'store_id': store.id,
             'store_name': store.name,
@@ -118,3 +121,21 @@ def _log_email(store, start_date, end_date, status, message):
     line = f'[{timestamp}] {store.name} -> {store.manager_email} | {status} | {message}\n'
     with open(log_file, 'a', encoding='utf-8') as f:
         f.write(line)
+    
+    try:
+        log = EmailLog(
+            store_id=store.id,
+            recipient=store.manager_email or '',
+            subject=f'[{store.name}] 排班表 ({start_date} ~ {end_date})',
+            status=status,
+            error_message=message if status in ['error', 'no_email'] else None,
+            sent_at=datetime.utcnow()
+        )
+        db.session.add(log)
+        db.session.commit()
+    except Exception as e:
+        print(f'[邮件日志入库失败] {e}')
+        try:
+            db.session.rollback()
+        except:
+            pass

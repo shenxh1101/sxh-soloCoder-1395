@@ -86,6 +86,8 @@ class Schedule(db.Model):
     date = db.Column(db.Date, nullable=False)
     start_time = db.Column(db.String(5), nullable=False)
     end_time = db.Column(db.String(5), nullable=False)
+    status = db.Column(db.String(20), default='draft')
+    release_id = db.Column(db.Integer, db.ForeignKey('schedule_releases.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -100,6 +102,8 @@ class Schedule(db.Model):
             'date': self.date.strftime('%Y-%m-%d') if isinstance(self.date, str) else self.date.isoformat(),
             'start_time': self.start_time,
             'end_time': self.end_time,
+            'status': self.status,
+            'release_id': self.release_id,
             'title': f'{self.employee.name} - {self.store.name}',
             'duration': self._get_duration()
         }
@@ -109,3 +113,64 @@ class Schedule(db.Model):
         end = datetime.strptime(self.end_time, '%H:%M')
         diff = end - start
         return round(diff.total_seconds() / 3600, 1)
+
+class ScheduleRelease(db.Model):
+    __tablename__ = 'schedule_releases'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey('stores.id'), nullable=False)
+    version = db.Column(db.Integer, default=1)
+    status = db.Column(db.String(20), default='pending')
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    operator = db.Column(db.String(50), default='系统')
+    note = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    published_at = db.Column(db.DateTime)
+    
+    schedules = db.relationship('Schedule', backref='release', lazy=True)
+    
+    def to_dict(self):
+        store = Store.query.get(self.store_id)
+        return {
+            'id': self.id,
+            'store_id': self.store_id,
+            'store_name': store.name if store else '',
+            'version': self.version,
+            'status': self.status,
+            'status_text': {'pending': '待确认', 'published': '已发布', 'rejected': '已驳回'}[self.status],
+            'start_date': self.start_date.isoformat(),
+            'end_date': self.end_date.isoformat(),
+            'operator': self.operator,
+            'note': self.note,
+            'schedule_count': len(self.schedules),
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
+            'published_at': self.published_at.strftime('%Y-%m-%d %H:%M') if self.published_at else ''
+        }
+
+class EmailLog(db.Model):
+    __tablename__ = 'email_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey('stores.id'))
+    recipient = db.Column(db.String(100))
+    subject = db.Column(db.String(200))
+    status = db.Column(db.String(20), default='pending')
+    error_message = db.Column(db.String(500))
+    sent_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        store = Store.query.get(self.store_id) if self.store_id else None
+        return {
+            'id': self.id,
+            'store_id': self.store_id,
+            'store_name': store.name if store else '',
+            'recipient': self.recipient,
+            'subject': self.subject,
+            'status': self.status,
+            'status_text': {'success': '成功', 'simulated': '模拟发送', 'no_email': '无邮箱', 'error': '失败', 'pending': '待发送'}[self.status],
+            'error_message': self.error_message,
+            'sent_at': self.sent_at.strftime('%Y-%m-%d %H:%M') if self.sent_at else '',
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else ''
+        }

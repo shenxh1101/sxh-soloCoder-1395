@@ -81,6 +81,8 @@
                     <button class="tab-btn active" onclick="switchTab('calendar')" id="tab-calendar">日历视图</button>
                     <button class="tab-btn" onclick="switchTab('summary')" id="tab-summary">汇总表</button>
                     <button class="tab-btn" onclick="switchTab('workhours')" id="tab-workhours">工时统计</button>
+                    <button class="tab-btn" onclick="switchTab('release')" id="tab-release">发布管理</button>
+                    <button class="tab-btn" onclick="switchTab('emaillog')" id="tab-emaillog">邮件记录</button>
                 </div>
 
                 <div class="tab-content active" id="content-calendar">
@@ -96,6 +98,18 @@
                 <div class="tab-content" id="content-workhours">
                     <div class="workhours-container" id="workhoursContainer">
                         <p class="empty-tip">请点击"工时统计"查看本月工时情况</p>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="content-release">
+                    <div class="release-container" id="releaseContainer">
+                        <p class="empty-tip">加载中...</p>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="content-emaillog">
+                    <div class="email-log-container" id="emailLogContainer">
+                        <p class="empty-tip">加载中...</p>
                     </div>
                 </div>
             </main>
@@ -155,6 +169,7 @@
                     <select id="expMode">
                         <option value="full">完整导出（含汇总+各门店+工时）</option>
                         <option value="store">门店模式（矩阵式排班视图）</option>
+                        <option value="simple">店长简版（周视图，简洁明了）</option>
                         <option value="week">按周汇总</option>
                     </select>
                 </div>

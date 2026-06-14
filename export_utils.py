@@ -261,18 +261,123 @@ def export_to_excel(start_date_str, end_date_str, store_id=None, mode='full'):
     wb = Workbook()
     wb.remove(wb.active)
 
-    if mode == 'week' or mode == 'full':
+    if mode == 'simple':
+        for s in stores:
+            _write_simple_week_sheet(wb, s, start_date, end_date)
+    elif mode == 'week' or mode == 'full':
         _write_summary_sheet(wb, start_date, end_date, stores)
-
-    for s in stores:
-        _write_store_sheet(wb, s, start_date, end_date, detailed=True)
-
-    if not store_id:
-        _write_workhours_sheet(wb, start_date, end_date)
+        for s in stores:
+            _write_store_sheet(wb, s, start_date, end_date, detailed=True)
+        if not store_id:
+            _write_workhours_sheet(wb, start_date, end_date)
+    else:
+        _write_summary_sheet(wb, start_date, end_date, stores)
+        for s in stores:
+            _write_store_sheet(wb, s, start_date, end_date, detailed=True)
+        if not store_id:
+            _write_workhours_sheet(wb, start_date, end_date)
 
     file_path = os.path.join(os.path.dirname(__file__), 'temp_schedule.xlsx')
     wb.save(file_path)
     return file_path
+
+def _write_simple_week_sheet(wb, store, start_date, end_date):
+    ws = wb.create_sheet(f'{store.name}_本周排班')
+    
+    day_count = (end_date - start_date).days + 1
+    days = []
+    cur = start_date
+    while cur <= end_date:
+        day_name = ['周一','周二','周三','周四','周五','周六','周日'][cur.weekday()]
+        days.append((cur, f'{cur.month}/{cur.day}\n{day_name}'))
+        cur += timedelta(days=1)
+    
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2 + day_count)
+    ws.cell(row=1, column=1, value=f'{store.name} 本周排班表 ({start_date.isoformat()} ~ {end_date.isoformat()})')
+    _apply_style(ws.cell(row=1, column=1), font=Font(bold=True, size=14), align=CENTER, border=False)
+    ws.row_dimensions[1].height = 28
+    
+    headers = ['员工', '技能'] + [d[1] for d in days] + ['本周工时']
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=3, column=col, value=h)
+        _apply_style(c, font=HEADER_FONT, fill=HEADER_FILL, align=CENTER)
+    ws.row_dimensions[3].height = 32
+    
+    emp_scheds = {}
+    cur = start_date
+    while cur <= end_date:
+        scheds = Schedule.query.filter_by(store_id=store.id, date=cur).all()
+        for s in scheds:
+            if s.employee_id not in emp_scheds:
+                emp_scheds[s.employee_id] = {'name': s.employee.name, 'skill': s.employee.skill_level, 'days': {}}
+            emp_scheds[s.employee_id]['days'][cur.isoformat()] = f'{s.start_time}-{s.end_time}'
+        cur += timedelta(days=1)
+    
+    emp_list = sorted(emp_scheds.values(), key=lambda x: (0 if x['skill'] == '高级' else 1, x['name']))
+    
+    row = 4
+    for emp in emp_list:
+        ws.cell(row=row, column=1, value=emp['name'])
+        skill_cell = ws.cell(row=row, column=2, value=emp['skill'])
+        if emp['skill'] == '高级':
+            _apply_style(skill_cell, fill=SENIOR_FILL, align=CENTER)
+        else:
+            _apply_style(skill_cell, align=CENTER)
+        
+        total_hours = 0
+        for i, (date, _) in enumerate(days):
+            date_str = date.isoformat()
+            shift = emp['days'].get(date_str, '')
+            cell = ws.cell(row=row, column=3 + i, value=shift)
+            if shift:
+                start_t = datetime.strptime(shift.split('-')[0], '%H:%M')
+                end_t = datetime.strptime(shift.split('-')[1], '%H:%M')
+                total_hours += (end_t - start_t).total_seconds() / 3600
+            _apply_style(cell, align=CENTER)
+        
+        ws.cell(row=row, column=3 + day_count, value=round(total_hours, 1))
+        _apply_style(ws.cell(row=row, column=1), align=CENTER)
+        _apply_style(ws.cell(row=row, column=3 + day_count), align=CENTER)
+        row += 1
+    
+    ws.cell(row=row, column=1, value='在岗人数')
+    ws.cell(row=row, column=2, value='')
+    _apply_style(ws.cell(row=row, column=1), font=Font(bold=True), fill=SUBHEADER_FILL, align=CENTER)
+    _apply_style(ws.cell(row=row, column=2), fill=SUBHEADER_FILL, align=CENTER)
+    
+    for i, (date, _) in enumerate(days):
+        scheds = Schedule.query.filter_by(store_id=store.id, date=date).all()
+        emp_count = len(set(s.employee_id for s in scheds))
+        cell = ws.cell(row=row, column=3 + i, value=emp_count)
+        _apply_style(cell, font=Font(bold=True), fill=SUBHEADER_FILL, align=CENTER)
+    _apply_style(ws.cell(row=row, column=3 + day_count), fill=SUBHEADER_FILL, align=CENTER)
+    row += 1
+    
+    ws.cell(row=row, column=1, value='缺人时段')
+    ws.cell(row=row, column=2, value='')
+    _apply_style(ws.cell(row=row, column=1), font=Font(bold=True), align=CENTER)
+    _apply_style(ws.cell(row=row, column=2), align=CENTER)
+    
+    for i, (date, _) in enumerate(days):
+        scheds = Schedule.query.filter_by(store_id=store.id, date=date).all()
+        slots = _time_slots(store, scheds)
+        shortages = [s['time'] for s in slots if not s['meets_minimum']]
+        cell_val = '、'.join(shortages) if shortages else '✓ 正常'
+        cell = ws.cell(row=row, column=3 + i, value=cell_val)
+        if shortages:
+            _apply_style(cell, fill=WARN_FILL, align=CENTER)
+        else:
+            _apply_style(cell, fill=PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid'), align=CENTER)
+    _apply_style(ws.cell(row=row, column=3 + day_count), align=CENTER)
+    
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 8
+    for i in range(day_count):
+        ws.column_dimensions[get_column_letter(3 + i)].width = 13
+    ws.column_dimensions[get_column_letter(3 + day_count)].width = 10
+    
+    for r in range(4, row):
+        ws.row_dimensions[r].height = 24
 
 def get_store_summary_html(store, start_date_str, end_date_str):
     from scheduler import Scheduler

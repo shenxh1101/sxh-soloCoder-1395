@@ -105,17 +105,45 @@ class Scheduler:
                     'message': f'排班时间超出员工可用时段（可用：{avail.start_time}-{avail.end_time}）'
                 })
 
-            if check_staff_sufficiency:
-                daily_scheds = Schedule.query.filter_by(employee_id=employee_id, date=date_obj)
-                if exclude_schedule_id:
-                    daily_scheds = daily_scheds.filter(Schedule.id != exclude_schedule_id)
-                daily_hours = sum(self._time_diff_hours(self._parse_time(s.start_time), self._parse_time(s.end_time)) for s in daily_scheds.all())
-                new_duration = self._time_diff_hours(shift_start, shift_end)
-                if daily_hours + new_duration > self.MAX_DAILY_HOURS:
-                    conflicts.append({
-                        'type': 'daily_hours_exceeded',
-                        'message': f'{employee.name} 当日总工时将达到 {round(daily_hours + new_duration, 1)} 小时，超过单日上限 {self.MAX_DAILY_HOURS} 小时'
-                    })
+        if check_staff_sufficiency:
+            store_scheds = Schedule.query.filter_by(store_id=store_id, date=date_obj)
+            if exclude_schedule_id:
+                store_scheds = store_scheds.filter(Schedule.id != exclude_schedule_id)
+            store_scheds_list = store_scheds.all()
+            
+            new_sched_obj = Schedule(
+                employee_id=employee_id,
+                store_id=store_id,
+                date=date_obj,
+                start_time=start_time,
+                end_time=end_time
+            )
+            new_scheds = store_scheds_list + [new_sched_obj]
+            
+            new_slots = self._get_time_slots(store, new_scheds)
+            new_insufficient = [s for s in new_slots if not s['meets_minimum']]
+            
+            old_slots = self._get_time_slots(store, store_scheds_list)
+            old_insufficient = set(s['time'] for s in old_slots if not s['meets_minimum'])
+            
+            new_bad = [s for s in new_insufficient if s['time'] not in old_insufficient]
+            
+            if exclude_schedule_id and new_bad:
+                conflicts.append({
+                    'type': 'store_will_be_short',
+                    'message': f'调整后，{store.name} 在 {", ".join([s["time"] for s in new_bad])} 将低于最低 {store.min_staff} 人要求'
+                })
+            
+            daily_scheds = Schedule.query.filter_by(employee_id=employee_id, date=date_obj)
+            if exclude_schedule_id:
+                daily_scheds = daily_scheds.filter(Schedule.id != exclude_schedule_id)
+            daily_hours = sum(self._time_diff_hours(self._parse_time(s.start_time), self._parse_time(s.end_time)) for s in daily_scheds.all())
+            new_duration = self._time_diff_hours(shift_start, shift_end)
+            if daily_hours + new_duration > self.MAX_DAILY_HOURS:
+                conflicts.append({
+                    'type': 'daily_hours_exceeded',
+                    'message': f'{employee.name} 当日总工时将达到 {round(daily_hours + new_duration, 1)} 小时，超过单日上限 {self.MAX_DAILY_HOURS} 小时'
+                })
 
         existing_query = Schedule.query.filter_by(employee_id=employee_id, date=date_obj)
         if exclude_schedule_id:
@@ -178,11 +206,21 @@ class Scheduler:
             }
         return {'has_conflict': False, 'conflicts': []}
 
-    def generate_schedule(self, start_date, end_date):
-        Schedule.query.filter(Schedule.date >= start_date, Schedule.date <= end_date).delete()
+    def generate_schedule(self, start_date, end_date, store_id=None):
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if isinstance(end_date, str):
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+        delete_query = Schedule.query.filter(Schedule.date >= start_date, Schedule.date <= end_date)
+        if store_id:
+            delete_query = delete_query.filter_by(store_id=store_id)
+        delete_query.delete()
         self.db.session.commit()
 
         stores = Store.query.all()
+        if store_id:
+            stores = [s for s in stores if s.id == store_id]
         employees = Employee.query.all()
 
         emp_weekly_stats = defaultdict(lambda: {'hours': 0, 'days': 0, 'shifts_per_store': defaultdict(int)})
@@ -310,7 +348,8 @@ class Scheduler:
                     store_id=store.id,
                     date=date_obj,
                     start_time=shift_start_str,
-                    end_time=shift_end_str
+                    end_time=shift_end_str,
+                    status='draft'
                 )
                 schedules.append(schedule)
                 assigned_count += 1
@@ -433,6 +472,7 @@ class Scheduler:
 
         shift_start = self._parse_time(start_time)
         shift_end = self._parse_time(end_time)
+        shift_hours = self._time_diff_hours(shift_start, shift_end)
 
         candidates = []
         for emp in Employee.query.all():
@@ -467,26 +507,72 @@ class Scheduler:
                 Schedule.date <= week_end
             ).all()
             week_hours = sum(self._time_diff_hours(self._parse_time(s.start_time), self._parse_time(s.end_time)) for s in week_scheds)
-
-            score = 0
-            if emp.skill_level == '高级':
-                score += 10
+            week_shift_count = len(week_scheds)
+            new_week_hours = week_hours + shift_hours
 
             store_shifts = len([s for s in week_scheds if s.store_id == store_id])
-            score += store_shifts * 3
+            total_store_shifts = len([s for s in Schedule.query.filter_by(
+                employee_id=emp.id, store_id=store_id
+            ).all()])
 
-            score += max(0, (40 - week_hours)) * 0.5
+            score = 0
+            reasons = []
+
+            if emp.skill_level == '高级':
+                score += 15
+                reasons.append('技能等级高')
+            else:
+                reasons.append('初级员工')
+
+            if store_shifts > 0:
+                familiarity_score = min(store_shifts * 3, 15)
+                score += familiarity_score
+                reasons.append(f'本周已有{store_shifts}次在本店')
+            else:
+                reasons.append('本周尚未在本店排班')
+
+            if total_store_shifts > 5:
+                score += 5
+                reasons.append('熟悉该门店流程')
+
+            hours_until_target = max(0, 40 - week_hours)
+            hours_score = min(hours_until_target * 0.5, 15)
+            score += hours_score
+
+            if new_week_hours <= 40:
+                reasons.append(f'本周工时({round(week_hours,1)}h)未达40h目标')
+            elif new_week_hours <= 45:
+                reasons.append(f'本周工时({round(week_hours,1)}h)接近目标')
+            else:
+                reasons.append(f'本周工时({round(week_hours,1)}h)偏多')
+
+            if new_week_hours > 50:
+                score -= 10
+
+            if avail.start_time <= start_time and avail.end_time >= end_time:
+                score += 5
+                reasons.append('时段完全匹配可用时间')
 
             candidates.append({
                 'employee_id': emp.id,
                 'name': emp.name,
+                'employee_name': emp.name,
                 'skill_level': emp.skill_level,
-                'week_hours': round(week_hours, 1),
                 'phone': emp.phone,
-                'score': round(score, 1)
+                'email': emp.email,
+                'weekly_hours': round(week_hours, 1),
+                'week_shift_count': week_shift_count,
+                'new_weekly_hours': round(new_week_hours, 1),
+                'store_familiarity': total_store_shifts,
+                'store_week_shifts': store_shifts,
+                'score': round(score, 1),
+                'reasons': reasons,
+                'available_time': f'{avail.start_time}-{avail.end_time}'
             })
 
         candidates.sort(key=lambda x: x['score'], reverse=True)
+        for i, c in enumerate(candidates):
+            c['rank'] = i + 1
         return candidates
 
     def replace_schedule(self, schedule_id, new_employee_id):
@@ -497,19 +583,24 @@ class Scheduler:
         check = self.check_conflict(
             new_employee_id, old_sched.store_id,
             old_sched.date.isoformat(),
-            old_sched.start_time, old_sched.end_time
+            old_sched.start_time, old_sched.end_time,
+            exclude_schedule_id=schedule_id
         )
         if check['has_conflict']:
             return {'success': False, 'conflicts': check['conflicts']}
 
-        delete_impact = self.check_delete_impact(schedule_id)
-        if delete_impact['has_conflict']:
-            pass
+        old_emp = Employee.query.get(old_sched.employee_id)
+        new_emp = Employee.query.get(new_employee_id)
 
         old_sched.employee_id = new_employee_id
         self.db.session.commit()
 
-        return {'success': True, 'schedule': old_sched.to_dict()}
+        return {
+            'success': True,
+            'schedule': old_sched.to_dict(),
+            'old_employee': old_emp.name if old_emp else '',
+            'new_employee': new_emp.name if new_emp else ''
+        }
 
     def get_summary(self, start_date_str, end_date_str):
         start_date = self._parse_date(start_date_str)

@@ -14,7 +14,7 @@ app.config['SECRET_KEY'] = 'scheduler-secret-key'
 
 db.init_app(app)
 
-from models import Store, Employee, Schedule, EmployeeAvailability
+from models import Store, Employee, Schedule, EmployeeAvailability, ScheduleRelease, EmailLog
 from scheduler import Scheduler
 import export_utils
 import email_utils
@@ -296,9 +296,189 @@ def send_email():
     result = email_utils.send_schedule_email(start_date, end_date, store_id)
     return jsonify(result)
 
+@app.route('/api/releases', methods=['GET'])
+def get_releases():
+    store_id = request.args.get('store_id', type=int)
+    status = request.args.get('status')
+    
+    query = ScheduleRelease.query.order_by(ScheduleRelease.created_at.desc())
+    if store_id:
+        query = query.filter_by(store_id=store_id)
+    if status:
+        query = query.filter_by(status=status)
+    
+    releases = query.limit(50).all()
+    return jsonify([r.to_dict() for r in releases])
+
+@app.route('/api/releases/<int:release_id>', methods=['GET'])
+def get_release(release_id):
+    release = ScheduleRelease.query.get(release_id)
+    if not release:
+        return jsonify({'error': '发布记录不存在'}), 404
+    return jsonify(release.to_dict())
+
+@app.route('/api/releases/<int:release_id>/publish', methods=['POST'])
+def publish_release(release_id):
+    release = ScheduleRelease.query.get(release_id)
+    if not release:
+        return jsonify({'error': '发布记录不存在'}), 404
+    
+    data = request.get_json() or {}
+    operator = data.get('operator', '运营')
+    note = data.get('note', '')
+    
+    schedules = Schedule.query.filter_by(release_id=release_id).all()
+    for sched in schedules:
+        sched.status = 'published'
+    
+    release.status = 'published'
+    release.operator = operator
+    release.note = note
+    release.published_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': '排班已发布',
+        'release': release.to_dict()
+    })
+
+@app.route('/api/releases/<int:release_id>/reject', methods=['POST'])
+def reject_release(release_id):
+    release = ScheduleRelease.query.get(release_id)
+    if not release:
+        return jsonify({'error': '发布记录不存在'}), 404
+    
+    data = request.get_json() or {}
+    operator = data.get('operator', '运营')
+    note = data.get('note', '')
+    
+    schedules = Schedule.query.filter_by(release_id=release_id).all()
+    for sched in schedules:
+        sched.status = 'draft'
+        sched.release_id = None
+    
+    release.status = 'rejected'
+    release.operator = operator
+    release.note = note
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': '已驳回，排班退回草稿状态',
+        'release': release.to_dict()
+    })
+
+@app.route('/api/releases/generate', methods=['POST'])
+def generate_release():
+    data = request.get_json()
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    store_id = data.get('store_id')
+    if store_id:
+        store_id = int(store_id)
+    operator = data.get('operator', '系统')
+    
+    if not start_date or not end_date:
+        return jsonify({'error': '请提供开始和结束日期'}), 400
+    
+    stores = Store.query.all()
+    if store_id:
+        stores = [s for s in stores if s.id == store_id]
+    
+    scheduler = Scheduler(db)
+    result = scheduler.generate_schedule(start_date, end_date, store_id=store_id)
+    
+    releases = []
+    for store in stores:
+        store_scheds = Schedule.query.filter(
+            Schedule.store_id == store.id,
+            Schedule.date >= start_date,
+            Schedule.date <= end_date,
+            Schedule.status == 'draft'
+        ).all()
+        
+        last_release = ScheduleRelease.query.filter_by(
+            store_id=store.id
+        ).order_by(ScheduleRelease.version.desc()).first()
+        version = (last_release.version + 1) if last_release else 1
+        
+        release = ScheduleRelease(
+            store_id=store.id,
+            version=version,
+            status='pending',
+            start_date=datetime.strptime(start_date, '%Y-%m-%d').date(),
+            end_date=datetime.strptime(end_date, '%Y-%m-%d').date(),
+            operator=operator,
+            note=f'自动生成第{version}版'
+        )
+        db.session.add(release)
+        db.session.flush()
+        
+        for sched in store_scheds:
+            sched.release_id = release.id
+        
+        releases.append(release)
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'成功生成 {result["generated"]} 条排班，{len(releases)} 个门店待确认',
+        'generated': result['generated'],
+        'releases': [r.to_dict() for r in releases],
+        'conflicts': result.get('conflicts', []),
+        'emp_stats': result.get('emp_stats', [])
+    })
+
+@app.route('/api/email-logs', methods=['GET'])
+def get_email_logs():
+    store_id = request.args.get('store_id', type=int)
+    limit = request.args.get('limit', 20, type=int)
+    
+    query = EmailLog.query.order_by(EmailLog.created_at.desc())
+    if store_id:
+        query = query.filter_by(store_id=store_id)
+    
+    logs = query.limit(limit).all()
+    return jsonify([l.to_dict() for l in logs])
+
 def init_db():
     with app.app_context():
         db.create_all()
+        
+        # 数据库迁移：给schedules表添加status和release_id列
+        try:
+            from sqlalchemy import text
+            db.session.execute(text("ALTER TABLE schedules ADD COLUMN status VARCHAR(20) DEFAULT 'draft'"))
+            db.session.commit()
+            print('已添加status列到schedules表')
+        except Exception as e:
+            pass
+        
+        try:
+            from sqlalchemy import text
+            db.session.execute(text("ALTER TABLE schedules ADD COLUMN release_id INTEGER"))
+            db.session.commit()
+            print('已添加release_id列到schedules表')
+        except Exception as e:
+            pass
+        
+        # 将已有排班默认设为published
+        try:
+            schedules = Schedule.query.all()
+            updated = 0
+            for s in schedules:
+                if not s.status or s.status == 'draft':
+                    s.status = 'published'
+                    updated += 1
+            if updated > 0:
+                db.session.commit()
+                print(f'已将 {updated} 条旧排班状态更新为published')
+        except Exception as e:
+            print(f'更新排班状态失败: {e}')
 
         if Store.query.count() == 0:
             stores = [

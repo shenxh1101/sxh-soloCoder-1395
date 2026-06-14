@@ -662,8 +662,243 @@ body {
     background: #ff4d4f;
 }
 
+.release-container,
+.email-log-container {
+    padding: 20px;
+}
+
+.release-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.release-header h3 {
+    font-size: 18px;
+    color: #262626;
+}
+
+.release-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.release-card {
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 16px;
+    background: white;
+    transition: box-shadow 0.2s;
+}
+
+.release-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.release-card.pending {
+    border-left: 4px solid #faad14;
+}
+
+.release-card.published {
+    border-left: 4px solid #52c41a;
+}
+
+.release-card.rejected {
+    border-left: 4px solid #ff4d4f;
+}
+
+.release-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.release-card h4 {
+    font-size: 15px;
+    color: #262626;
+}
+
+.release-status {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.release-status.pending {
+    background: #fffbe6;
+    color: #faad14;
+}
+
+.release-status.published {
+    background: #f6ffed;
+    color: #52c41a;
+}
+
+.release-status.rejected {
+    background: #fff2f0;
+    color: #ff4d4f;
+}
+
+.release-meta {
+    font-size: 12px;
+    color: #8c8c8c;
+    line-height: 1.8;
+}
+
+.release-meta span {
+    color: #262626;
+}
+
+.release-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.release-actions .btn {
+    flex: 1;
+    font-size: 12px;
+    padding: 6px 10px;
+}
+
+.email-log-list {
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.email-log-item {
+    display: grid;
+    grid-template-columns: 120px 1fr 1fr 80px 100px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    align-items: center;
+    gap: 12px;
+}
+
+.email-log-item:last-child {
+    border-bottom: none;
+}
+
+.email-log-item.header {
+    background: #fafafa;
+    font-weight: 600;
+    color: #595959;
+    font-size: 13px;
+}
+
+.email-log-store {
+    font-weight: 600;
+    color: #262626;
+    font-size: 13px;
+}
+
+.email-log-recipient {
+    font-size: 12px;
+    color: #595959;
+}
+
+.email-log-subject {
+    font-size: 12px;
+    color: #8c8c8c;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.email-log-status {
+    text-align: center;
+}
+
+.email-log-status .status-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.status-tag.success {
+    background: #f6ffed;
+    color: #52c41a;
+}
+
+.status-tag.simulated {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
+.status-tag.no_email {
+    background: #fff7e6;
+    color: #faad14;
+}
+
+.status-tag.error {
+    background: #fff2f0;
+    color: #ff4d4f;
+}
+
+.email-log-time {
+    font-size: 12px;
+    color: #8c8c8c;
+    text-align: right;
+}
+
+.candidate-detail {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #8c8c8c;
+}
+
+.candidate-detail .reason-tags {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.candidate-detail .reason-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    background: #f0f0f0;
+    border-radius: 2px;
+    font-size: 10px;
+    color: #595959;
+}
+
+.candidate-detail .reason-tag.highlight {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
+.tabs {
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    font-size: 13px;
+}
+
 @media (max-width: 1200px) {
     .sidebar {
         width: 240px;
+    }
+}
+
+@media (max-width: 768px) {
+    .release-cards {
+        grid-template-columns: 1fr;
+    }
+    .email-log-item {
+        grid-template-columns: 80px 1fr 80px;
+    }
+    .email-log-item.header {
+        display: none;
     }
 }

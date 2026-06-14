@@ -1,0 +1,8 @@
+[2026-06-15 05:45:58] A店 -> manager_a@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）
+[2026-06-15 05:45:58] B店 -> manager_b@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）
+[2026-06-15 05:45:58] C店 -> manager_c@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）
+[2026-06-15 05:45:58] D店 -> manager_d@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）
+[2026-06-15 05:49:53] A店 -> manager_a@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）
+[2026-06-15 05:49:53] B店 -> manager_b@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）
+[2026-06-15 05:49:53] C店 -> manager_c@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）
+[2026-06-15 05:49:53] D店 -> manager_d@example.com | simulated | 模拟SMTP未连接，已记录为待发送状态（[Errno 11001] getaddrinfo fail）

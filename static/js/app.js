@@ -223,12 +223,13 @@ function generateSchedule() {
 
     document.getElementById('genBtn').disabled = true;
 
-    fetch('/api/schedules/generate', {
+    fetch('/api/releases/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             start_date: startDate,
-            end_date: endDate
+            end_date: endDate,
+            operator: '运营'
         })
     })
     .then(r => r.json())
@@ -240,8 +241,17 @@ function generateSchedule() {
                     <p style="color:#52c41a; font-weight:600; margin-bottom:8px;">✓ ${data.message}</p>
             `;
 
-            if (data.summary) {
-                html += `<p style="font-size:12px; color:#595959;">${data.summary}</p>`;
+            if (data.releases && data.releases.length > 0) {
+                html += `<p style="font-size:12px; color:#595959; margin-bottom:8px;">
+                    共生成 ${data.releases.length} 个门店版本，待运营确认发布：
+                </p>`;
+                data.releases.forEach(r => {
+                    html += `
+                        <div style="padding:6px 10px; background:#fffbe6; border:1px solid #ffe58f; border-radius:4px; margin-bottom:4px; font-size:12px;">
+                            <strong>${r.store_name}</strong> - 第${r.version}版 | 排班${r.schedule_count}条
+                        </div>
+                    `;
+                });
             }
 
             if (data.emp_stats && data.emp_stats.length > 0) {
@@ -635,6 +645,10 @@ function switchTab(tabName) {
         showSummary();
     } else if (tabName === 'workhours') {
         showWorkhours();
+    } else if (tabName === 'release') {
+        loadReleases();
+    } else if (tabName === 'emaillog') {
+        loadEmailLogs();
     }
 }
 
@@ -877,4 +891,179 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
+}
+
+function loadReleases() {
+    fetch('/api/releases')
+        .then(r => r.json())
+        .then(data => {
+            renderReleases(data);
+        })
+        .catch(err => {
+            document.getElementById('releaseContainer').innerHTML = '<p class="empty-tip">加载失败</p>';
+        });
+}
+
+function renderReleases(releases) {
+    const container = document.getElementById('releaseContainer');
+
+    if (!releases || releases.length === 0) {
+        container.innerHTML = '<p class="empty-tip">暂无发布记录，点击"自动排班"生成待确认版本</p>';
+        return;
+    }
+
+    const pending = releases.filter(r => r.status === 'pending');
+    const published = releases.filter(r => r.status === 'published');
+    const rejected = releases.filter(r => r.status === 'rejected');
+
+    let html = `
+        <div class="release-header">
+            <h3>发布管理</h3>
+            <div>
+                <span style="font-size:12px; color:#8c8c8c; margin-right:12px;">
+                    待确认: <strong style="color:#faad14;">${pending.length}</strong>
+                </span>
+                <span style="font-size:12px; color:#8c8c8c; margin-right:12px;">
+                    已发布: <strong style="color:#52c41a;">${published.length}</strong>
+                </span>
+                <button class="btn btn-secondary btn-sm" onclick="loadReleases()">刷新</button>
+            </div>
+        </div>
+        <div class="release-cards">
+    `;
+
+    releases.forEach(r => {
+        let actions = '';
+        if (r.status === 'pending') {
+            actions = `
+                <div class="release-actions">
+                    <button class="btn btn-success btn-sm" onclick="publishRelease(${r.id})">确认发布</button>
+                    <button class="btn btn-danger btn-sm" onclick="rejectRelease(${r.id})">驳回</button>
+                </div>
+            `;
+        }
+
+        html += `
+            <div class="release-card ${r.status}">
+                <div class="release-card-header">
+                    <h4>${r.store_name}</h4>
+                    <span class="release-status ${r.status}">${r.status_text}</span>
+                </div>
+                <div class="release-meta">
+                    <div>版本: <span>第${r.version}版</span></div>
+                    <div>日期范围: <span>${r.start_date} ~ ${r.end_date}</span></div>
+                    <div>排班数量: <span>${r.schedule_count}条</span></div>
+                    <div>操作人: <span>${r.operator}</span></div>
+                    <div>创建时间: <span>${r.created_at}</span></div>
+                    ${r.note ? `<div>备注: <span>${r.note}</span></div>` : ''}
+                    ${r.published_at ? `<div>发布时间: <span>${r.published_at}</span></div>` : ''}
+                </div>
+                ${actions}
+            </div>
+        `;
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function publishRelease(releaseId) {
+    if (!confirm('确认发布这个排班版本吗？发布后店长端将可见。')) {
+        return;
+    }
+
+    fetch(`/api/releases/${releaseId}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operator: '运营' })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('发布成功', 'success');
+            loadReleases();
+            refreshAll();
+        } else {
+            showToast(data.error || '发布失败', 'error');
+        }
+    })
+    .catch(err => {
+        showToast('发布失败', 'error');
+    });
+}
+
+function rejectRelease(releaseId) {
+    const note = prompt('请输入驳回原因：');
+    if (note === null) return;
+
+    fetch(`/api/releases/${releaseId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operator: '运营', note: note })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('已驳回', 'success');
+            loadReleases();
+            refreshAll();
+        } else {
+            showToast(data.error || '操作失败', 'error');
+        }
+    })
+    .catch(err => {
+        showToast('操作失败', 'error');
+    });
+}
+
+function loadEmailLogs() {
+    fetch('/api/email-logs?limit=30')
+        .then(r => r.json())
+        .then(data => {
+            renderEmailLogs(data);
+        })
+        .catch(err => {
+            document.getElementById('emailLogContainer').innerHTML = '<p class="empty-tip">加载失败</p>';
+        });
+}
+
+function renderEmailLogs(logs) {
+    const container = document.getElementById('emailLogContainer');
+
+    if (!logs || logs.length === 0) {
+        container.innerHTML = '<p class="empty-tip">暂无邮件发送记录</p>';
+        return;
+    }
+
+    let html = `
+        <div class="release-header">
+            <h3>邮件发送记录</h3>
+            <button class="btn btn-secondary btn-sm" onclick="loadEmailLogs()">刷新</button>
+        </div>
+        <div class="email-log-list">
+            <div class="email-log-item header">
+                <div>门店</div>
+                <div>收件人</div>
+                <div>主题</div>
+                <div>状态</div>
+                <div>发送时间</div>
+            </div>
+    `;
+
+    logs.forEach(log => {
+        html += `
+            <div class="email-log-item">
+                <div class="email-log-store">${log.store_name || '-'}</div>
+                <div class="email-log-recipient">${log.recipient || '-'}</div>
+                <div class="email-log-subject" title="${log.subject || ''}">${log.subject || '-'}</div>
+                <div class="email-log-status">
+                    <span class="status-tag ${log.status}">${log.status_text}</span>
+                </div>
+                <div class="email-log-time">${log.sent_at || '-'}</div>
+            </div>
+        `;
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
 }

@@ -225,17 +225,30 @@ function renderCandidates(candidates) {
         return;
     }
 
-    container.innerHTML = candidates.map((c, idx) => `
+    container.innerHTML = candidates.map((c) => `
         <div class="candidate-item" onclick="selectCandidate(${c.employee_id}, this)">
             <div class="candidate-info">
                 <div>
-                    <div class="candidate-name">${c.employee_name}</div>
-                    <div class="candidate-meta">
-                        ${c.skill_level} | 本周工时: ${c.weekly_hours}h | 门店熟悉度: ${c.store_familiarity}
+                    <div class="candidate-name">
+                        ${c.name}
+                        <span class="candidate-rank">推荐第${c.rank}名</span>
+                    </div>
+                    <div class="candidate-detail">
+                        <span class="skill-badge ${c.skill_level === '高级' ? 'senior' : 'junior'}">${c.skill_level}</span>
+                        <span>本周工时: ${c.weekly_hours}h → ${c.new_weekly_hours}h</span>
+                        <span>门店熟悉度: ${c.store_familiarity}次</span>
+                        <span>可用: ${c.available_time}</span>
+                    </div>
+                    <div class="reason-tags">
+                        ${(c.reasons || []).map((r, i) => 
+                            `<span class="reason-tag ${i < 2 ? 'highlight' : ''}">${r}</span>`
+                        ).join('')}
                     </div>
                 </div>
             </div>
-            <div class="candidate-score">推荐度: ${c.score}</div>
+            <div class="candidate-score">
+                ${c.score} 分
+            </div>
         </div>
     `).join('');
 }
