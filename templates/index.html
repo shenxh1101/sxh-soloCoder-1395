@@ -13,7 +13,7 @@
             <h1>🏪 多门店员工排班系统</h1>
             <div class="header-actions">
                 <button class="btn btn-primary" onclick="openGenerateModal()">自动排班</button>
-                <button class="btn btn-success" onclick="exportExcel()">导出Excel</button>
+                <button class="btn btn-success" onclick="openExportModal()">导出Excel</button>
                 <button class="btn btn-info" onclick="sendEmail()">发送邮件</button>
             </div>
         </header>
@@ -43,6 +43,13 @@
                 <div class="sidebar-section">
                     <h3>👥 员工列表</h3>
                     <div class="employee-list" id="employeeList">
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>🏬 门店视图</h3>
+                    <div id="storeLinks" class="store-links">
+                        <p class="tip" style="font-size: 12px;">加载中...</p>
                     </div>
                 </div>
 
@@ -110,11 +117,74 @@
                     <label>结束日期</label>
                     <input type="date" id="genEndDate">
                 </div>
-                <p class="tip">系统将根据员工可用时间、技能等级和门店需求自动生成排班。</p>
+                <p class="tip">系统将根据员工可用时间、技能等级和门店需求自动生成排班，并尽量均衡工时和照顾员工偏好。</p>
+                <div id="genResult" style="display:none; margin-top: 12px;"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeGenerateModal()">取消</button>
-                <button class="btn btn-primary" onclick="generateSchedule()">生成排班</button>
+                <button class="btn btn-secondary" onclick="closeGenerateModal()">关闭</button>
+                <button class="btn btn-primary" onclick="generateSchedule()" id="genBtn">生成排班</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="exportModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>导出Excel</h3>
+                <span class="close" onclick="closeExportModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>开始日期</label>
+                        <input type="date" id="expStartDate">
+                    </div>
+                    <div class="form-group">
+                        <label>结束日期</label>
+                        <input type="date" id="expEndDate">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>导出范围</label>
+                    <select id="expStoreId">
+                        <option value="">全部门店</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>导出模式</label>
+                    <select id="expMode">
+                        <option value="full">完整导出（含汇总+各门店+工时）</option>
+                        <option value="store">门店模式（矩阵式排班视图）</option>
+                        <option value="week">按周汇总</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeExportModal()">取消</button>
+                <button class="btn btn-success" onclick="doExportExcel()">确认导出</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="deleteConfirmModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>确认删除排班</h3>
+                <span class="close" onclick="closeDeleteConfirmModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p id="deleteConfirmText">确定要删除这条排班吗？</p>
+                <div id="deleteWarning" style="display:none;"></div>
+                <div id="forceDeleteOption" style="display:none; margin-top: 12px;">
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; color:#595959;">
+                        <input type="checkbox" id="forceDeleteCheck">
+                        我已知晓会导致门店缺人，确认强制删除
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDeleteConfirmModal()">取消</button>
+                <button class="btn btn-danger" onclick="confirmDelete()" id="confirmDeleteBtn">确认删除</button>
             </div>
         </div>
     </div>
@@ -166,6 +236,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/zh-cn.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2"></script>
 </body>
 </html>

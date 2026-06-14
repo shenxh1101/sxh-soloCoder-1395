@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ store.name }} - 门店排班视图</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/store.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div>
+                <h1>🏪 {{ store.name }} - 门店排班视图</h1>
+                <p style="font-size: 13px; opacity: 0.9; margin-top: 4px;">
+                    {{ store.address }} | 营业时间: {{ store.open_time }} - {{ store.close_time }} | 最低在岗: {{ store.min_staff }}人
+                </p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="backToMain()">← 返回总览</button>
+                <button class="btn btn-success" onclick="exportStoreExcel()">导出本店</button>
+                <button class="btn btn-info" onclick="sendStoreEmail()">发送邮件</button>
+                <button class="btn btn-primary" onclick="loadStoreView()">刷新</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <h3>📅 本周日期</h3>
+                    <div class="date-picker-group">
+                        <label>开始日期</label>
+                        <input type="date" id="startDate" onchange="loadStoreView()">
+                    </div>
+                    <div class="date-picker-group">
+                        <label>结束日期</label>
+                        <input type="date" id="endDate" onchange="loadStoreView()">
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>📊 本周统计</h3>
+                    <div id="storeStats" class="store-stats">
+                        <p class="empty-tip" style="padding: 20px; font-size: 12px;">加载中...</p>
+                    </div>
+                </div>
+
+                <div class="sidebar-section legend">
+                    <h3>📌 图例说明</h3>
+                    <div class="legend-item">
+                        <span class="legend-color senior"></span>
+                        <span>高级员工</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color junior"></span>
+                        <span>初级员工</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color conflict"></span>
+                        <span>人员不足</span>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>⚡ 快速操作</h3>
+                    <p class="tip" style="font-size: 12px;">点击排班单元格中的员工可快速替换</p>
+                </div>
+            </aside>
+
+            <main class="content-area">
+                <div class="store-view-container">
+                    <div id="storeViewContent">
+                        <p class="empty-tip" style="padding: 80px 20px;">正在加载门店排班数据...</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div class="modal" id="replaceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>快速替换员工</h3>
+                <span class="close" onclick="closeReplaceModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="replaceScheduleId">
+                <div class="replace-info">
+                    <p><strong>原员工：</strong><span id="originalEmployee">-</span></p>
+                    <p><strong>时段：</strong><span id="replaceTimeSlot">-</span></p>
+                </div>
+                <div class="form-group">
+                    <label>选择候补员工（按推荐度排序）</label>
+                    <div id="candidateList" class="candidate-list">
+                        <p class="empty-tip" style="padding: 20px; font-size: 12px;">正在加载候补员工...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeReplaceModal()">取消</button>
+                <button class="btn btn-primary" onclick="confirmReplace()" id="confirmReplaceBtn" disabled>确认替换</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/static/js/store.js?v=2"></script>
+</body>
+</html>
