@@ -14,7 +14,7 @@ app.config['SECRET_KEY'] = 'scheduler-secret-key'
 
 db.init_app(app)
 
-from models import Store, Employee, Schedule, EmployeeAvailability, ScheduleRelease, EmailLog
+from models import Store, Employee, Schedule, EmployeeAvailability, ScheduleRelease, EmailLog, ScheduleChangeLog
 from scheduler import Scheduler
 import export_utils
 import email_utils
@@ -127,12 +127,43 @@ def update_schedule(schedule_id):
             'conflicts': result['conflicts']
         }), 409
 
+    old_employee_id = schedule.employee_id
+    old_store_id = schedule.store_id
+    old_date = schedule.date
+    old_start = schedule.start_time
+    old_end = schedule.end_time
+
     schedule.employee_id = new_employee_id
     schedule.store_id = new_store_id
     if 'date' in data:
         schedule.date = data['date']
     schedule.start_time = new_start
     schedule.end_time = new_end
+
+    change_type = 'modify'
+    if old_employee_id != new_employee_id:
+        change_type = 'replace'
+    elif old_store_id != new_store_id:
+        change_type = 'modify'
+    
+    operator = data.get('operator', '运营')
+    change_log = ScheduleChangeLog(
+        release_id=schedule.release_id,
+        store_id=new_store_id,
+        schedule_id=schedule.id,
+        change_type=change_type,
+        employee_id=new_employee_id,
+        old_employee_id=old_employee_id,
+        old_date=old_date,
+        old_start_time=old_start,
+        old_end_time=old_end,
+        new_date=schedule.date,
+        new_start_time=new_start,
+        new_end_time=new_end,
+        operator=operator,
+        note='手动调整班次'
+    )
+    db.session.add(change_log)
 
     db.session.commit()
 
@@ -170,6 +201,20 @@ def delete_schedule(schedule_id):
                 'message': '删除将导致门店人手不足，如需强制删除请加 force=true'
             }), 409
 
+    change_log = ScheduleChangeLog(
+        release_id=schedule.release_id,
+        store_id=schedule.store_id,
+        schedule_id=schedule.id,
+        change_type='remove',
+        employee_id=schedule.employee_id,
+        old_date=schedule.date,
+        old_start_time=schedule.start_time,
+        old_end_time=schedule.end_time,
+        operator='运营',
+        note='手动删除排班'
+    )
+    db.session.add(change_log)
+
     db.session.delete(schedule)
     db.session.commit()
     return jsonify({'success': True})
@@ -178,11 +223,12 @@ def delete_schedule(schedule_id):
 def replace_schedule(schedule_id):
     data = request.get_json()
     new_employee_id = data.get('new_employee_id')
+    operator = data.get('operator', '运营')
     if not new_employee_id:
         return jsonify({'error': '请指定替换员工'}), 400
 
     scheduler = Scheduler(db)
-    result = scheduler.replace_schedule(schedule_id, new_employee_id)
+    result = scheduler.replace_schedule(schedule_id, new_employee_id, operator=operator)
     if not result.get('success') and result.get('conflicts'):
         return jsonify(result), 409
     return jsonify(result)
@@ -224,6 +270,7 @@ def check_conflict():
 def get_store_view(store_id):
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    only_published = request.args.get('only_published', 'true').lower() == 'true'
 
     if not start_date or not end_date:
         today = datetime.now().date()
@@ -231,7 +278,7 @@ def get_store_view(store_id):
         end_date = (today + timedelta(days=6 - today.weekday())).isoformat()
 
     scheduler = Scheduler(db)
-    result = scheduler.get_store_view(store_id, start_date, end_date)
+    result = scheduler.get_store_view(store_id, start_date, end_date, only_published=only_published)
     if not result:
         return jsonify({'error': '门店不存在'}), 404
     return jsonify(result)
@@ -370,6 +417,220 @@ def reject_release(release_id):
         'message': '已驳回，排班退回草稿状态',
         'release': release.to_dict()
     })
+
+@app.route('/api/releases/<int:release_id>/regenerate', methods=['POST'])
+def regenerate_release(release_id):
+    release = ScheduleRelease.query.get(release_id)
+    if not release:
+        return jsonify({'error': '发布记录不存在'}), 404
+    
+    data = request.get_json() or {}
+    operator = data.get('operator', '运营')
+    
+    old_schedules = Schedule.query.filter_by(release_id=release_id).all()
+    old_sched_map = {}
+    for s in old_schedules:
+        key = f'{s.employee_id}_{s.date}_{s.start_time}_{s.end_time}'
+        old_sched_map[key] = s
+    
+    scheduler = Scheduler(db)
+    result = scheduler.generate_schedule(
+        release.start_date.isoformat(),
+        release.end_date.isoformat(),
+        store_id=release.store_id
+    )
+    
+    new_schedules = Schedule.query.filter(
+        Schedule.store_id == release.store_id,
+        Schedule.date >= release.start_date,
+        Schedule.date <= release.end_date,
+        Schedule.status == 'draft'
+    ).all()
+    
+    new_sched_map = {}
+    for s in new_schedules:
+        key = f'{s.employee_id}_{s.date}_{s.start_time}_{s.end_time}'
+        new_sched_map[key] = s
+    
+    change_logs = []
+    
+    old_keys = set(old_sched_map.keys())
+    new_keys = set(new_sched_map.keys())
+    
+    for key in old_keys - new_keys:
+        old_s = old_sched_map[key]
+        log = ScheduleChangeLog(
+            release_id=release.id,
+            store_id=release.store_id,
+            schedule_id=old_s.id,
+            change_type='remove',
+            employee_id=old_s.employee_id,
+            old_date=old_s.date,
+            old_start_time=old_s.start_time,
+            old_end_time=old_s.end_time,
+            operator=operator,
+            note='重新生成后移除'
+        )
+        change_logs.append(log)
+        db.session.add(log)
+    
+    for key in new_keys - old_keys:
+        new_s = new_sched_map[key]
+        log = ScheduleChangeLog(
+            release_id=release.id,
+            store_id=release.store_id,
+            schedule_id=new_s.id,
+            change_type='add',
+            employee_id=new_s.employee_id,
+            new_date=new_s.date,
+            new_start_time=new_s.start_time,
+            new_end_time=new_s.end_time,
+            operator=operator,
+            note='重新生成后新增'
+        )
+        change_logs.append(log)
+        db.session.add(log)
+    
+    last_release = ScheduleRelease.query.filter_by(
+        store_id=release.store_id
+    ).order_by(ScheduleRelease.version.desc()).first()
+    version = (last_release.version + 1) if last_release else 1
+    
+    new_release = ScheduleRelease(
+        store_id=release.store_id,
+        version=version,
+        status='pending',
+        start_date=release.start_date,
+        end_date=release.end_date,
+        operator=operator,
+        note=f'重新生成第{version}版（基于第{release.version}版）'
+    )
+    db.session.add(new_release)
+    db.session.flush()
+    
+    for sched in new_schedules:
+        sched.release_id = new_release.id
+    
+    for log in change_logs:
+        log.release_id = new_release.id
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'重新生成完成，新版本 v{version}，共 {len(change_logs)} 处变更',
+        'release': new_release.to_dict(),
+        'old_version': release.version,
+        'new_version': version,
+        'changes': [log.to_dict() for log in change_logs],
+        'change_summary': {
+            'added': sum(1 for l in change_logs if l.change_type == 'add'),
+            'removed': sum(1 for l in change_logs if l.change_type == 'remove'),
+            'modified': sum(1 for l in change_logs if l.change_type == 'modify'),
+            'total': len(change_logs)
+        }
+    })
+
+@app.route('/api/releases/<int:release_id>/diff', methods=['GET'])
+def release_diff(release_id):
+    release = ScheduleRelease.query.get(release_id)
+    if not release:
+        return jsonify({'error': '发布记录不存在'}), 404
+    
+    prev_release = ScheduleRelease.query.filter(
+        ScheduleRelease.store_id == release.store_id,
+        ScheduleRelease.id < release_id
+    ).order_by(ScheduleRelease.id.desc()).first()
+    
+    if not prev_release:
+        return jsonify({
+            'release_id': release_id,
+            'prev_release_id': None,
+            'is_first': True,
+            'changes': [],
+            'change_summary': {'added': 0, 'removed': 0, 'modified': 0, 'total': 0}
+        })
+    
+    logs = ScheduleChangeLog.query.filter_by(release_id=release_id).all()
+    if not logs:
+        old_schedules = Schedule.query.filter_by(release_id=prev_release.id).all()
+        new_schedules = Schedule.query.filter_by(release_id=release_id).all()
+        
+        old_map = {}
+        for s in old_schedules:
+            key = f'{s.employee_id}_{s.date}_{s.start_time}_{s.end_time}'
+            old_map[key] = s
+        
+        new_map = {}
+        for s in new_schedules:
+            key = f'{s.employee_id}_{s.date}_{s.start_time}_{s.end_time}'
+            new_map[key] = s
+        
+        old_keys = set(old_map.keys())
+        new_keys = set(new_map.keys())
+        
+        changes = []
+        
+        for key in old_keys - new_keys:
+            old_s = old_map[key]
+            emp = Employee.query.get(old_s.employee_id)
+            changes.append({
+                'type': 'remove',
+                'type_text': '删除',
+                'employee_id': old_s.employee_id,
+                'employee_name': emp.name if emp else '',
+                'date': old_s.date.isoformat(),
+                'start_time': old_s.start_time,
+                'end_time': old_s.end_time,
+                'description': f'删除 {emp.name if emp else ""} 的班次 {old_s.date} {old_s.start_time}-{old_s.end_time}'
+            })
+        
+        for key in new_keys - old_keys:
+            new_s = new_map[key]
+            emp = Employee.query.get(new_s.employee_id)
+            changes.append({
+                'type': 'add',
+                'type_text': '新增',
+                'employee_id': new_s.employee_id,
+                'employee_name': emp.name if emp else '',
+                'date': new_s.date.isoformat(),
+                'start_time': new_s.start_time,
+                'end_time': new_s.end_time,
+                'description': f'新增 {emp.name if emp else ""} 的班次 {new_s.date} {new_s.start_time}-{new_s.end_time}'
+            })
+    else:
+        changes = [log.to_dict() for log in logs]
+    
+    return jsonify({
+        'release_id': release_id,
+        'release_version': release.version,
+        'prev_release_id': prev_release.id,
+        'prev_version': prev_release.version,
+        'is_first': False,
+        'changes': changes,
+        'change_summary': {
+            'added': sum(1 for c in changes if c.get('type') == 'add' or c.get('change_type') == 'add'),
+            'removed': sum(1 for c in changes if c.get('type') == 'remove' or c.get('change_type') == 'remove'),
+            'modified': sum(1 for c in changes if c.get('type') == 'modify' or c.get('change_type') == 'modify'),
+            'total': len(changes)
+        }
+    })
+
+@app.route('/api/change-logs', methods=['GET'])
+def get_change_logs():
+    store_id = request.args.get('store_id', type=int)
+    release_id = request.args.get('release_id', type=int)
+    limit = request.args.get('limit', 50, type=int)
+    
+    query = ScheduleChangeLog.query.order_by(ScheduleChangeLog.created_at.desc())
+    
+    if store_id:
+        query = query.filter_by(store_id=store_id)
+    if release_id:
+        query = query.filter_by(release_id=release_id)
+    
+    logs = query.limit(limit).all()
+    return jsonify([log.to_dict() for log in logs])
 
 @app.route('/api/releases/generate', methods=['POST'])
 def generate_release():

@@ -885,6 +885,139 @@ body {
     font-size: 13px;
 }
 
+.diff-summary {
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.diff-stats {
+    display: flex;
+    gap: 12px;
+}
+
+.diff-stats .stat {
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.diff-stats .stat.add {
+    background: #f6ffed;
+    color: #52c41a;
+}
+
+.diff-stats .stat.remove {
+    background: #fff2f0;
+    color: #ff4d4f;
+}
+
+.diff-stats .stat.modify {
+    background: #e6f7ff;
+    color: #1890ff;
+}
+
+.diff-stats .stat.total {
+    background: #f0f0f0;
+    color: #595959;
+}
+
+.diff-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+}
+
+.diff-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.diff-item:last-child {
+    border-bottom: none;
+}
+
+.diff-item.add {
+    background: #f6ffed;
+    border-left: 3px solid #52c41a;
+}
+
+.diff-item.remove {
+    background: #fff2f0;
+    border-left: 3px solid #ff4d4f;
+}
+
+.diff-item.modify {
+    background: #e6f7ff;
+    border-left: 3px solid #1890ff;
+}
+
+.diff-item.replace {
+    background: #fffbe6;
+    border-left: 3px solid #faad14;
+}
+
+.diff-type {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.diff-type.add {
+    background: #b7eb8f;
+    color: #237804;
+}
+
+.diff-type.remove {
+    background: #ffa39e;
+    color: #cf1322;
+}
+
+.diff-type.modify {
+    background: #91d5ff;
+    color: #0050b3;
+}
+
+.diff-type.replace {
+    background: #ffd591;
+    color: #ad6800;
+}
+
+.diff-content {
+    flex: 1;
+}
+
+.diff-desc {
+    font-size: 13px;
+    font-weight: 500;
+    color: #262626;
+    margin-bottom: 2px;
+}
+
+.diff-time {
+    font-size: 11px;
+    color: #8c8c8c;
+}
+
+.diff-note {
+    font-size: 11px;
+    color: #bfbfbf;
+    margin-top: 2px;
+}
+
 @media (max-width: 1200px) {
     .sidebar {
         width: 240px;

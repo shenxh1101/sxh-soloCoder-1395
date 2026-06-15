@@ -938,7 +938,14 @@ function renderReleases(releases) {
             actions = `
                 <div class="release-actions">
                     <button class="btn btn-success btn-sm" onclick="publishRelease(${r.id})">确认发布</button>
+                    <button class="btn btn-warning btn-sm" onclick="regenerateRelease(${r.id})">重新生成</button>
                     <button class="btn btn-danger btn-sm" onclick="rejectRelease(${r.id})">驳回</button>
+                </div>
+            `;
+        } else {
+            actions = `
+                <div class="release-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="showReleaseDiff(${r.id})">查看差异</button>
                 </div>
             `;
         }
@@ -1014,6 +1021,117 @@ function rejectRelease(releaseId) {
     .catch(err => {
         showToast('操作失败', 'error');
     });
+}
+
+function regenerateRelease(releaseId) {
+    if (!confirm('确认重新生成这个门店的排班？将生成新版本并保留差异记录。')) {
+        return;
+    }
+
+    fetch(`/api/releases/${releaseId}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operator: '运营' })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message, 'success');
+            loadReleases();
+            refreshAll();
+            
+            if (data.changes && data.changes.length > 0) {
+                showDiffModal(data);
+            }
+        } else {
+            showToast(data.error || '重新生成失败', 'error');
+        }
+    })
+    .catch(err => {
+        showToast('重新生成失败', 'error');
+    });
+}
+
+function showReleaseDiff(releaseId) {
+    fetch(`/api/releases/${releaseId}/diff`)
+        .then(r => r.json())
+        .then(data => {
+            showDiffModal(data);
+        })
+        .catch(err => {
+            showToast('加载差异失败', 'error');
+        });
+}
+
+function showDiffModal(diffData) {
+    const summary = diffData.change_summary || {};
+    const changes = diffData.changes || [];
+
+    let changesHtml = '';
+    if (diffData.is_first) {
+        changesHtml = '<p class="empty-tip" style="padding:20px;">这是第一个版本，无前版对比</p>';
+    } else if (changes.length === 0) {
+        changesHtml = '<p class="empty-tip" style="padding:20px;">两版完全一致，无差异</p>';
+    } else {
+        changesHtml = '<div class="diff-list">';
+        changes.forEach(c => {
+            const type = c.change_type || c.type || 'modify';
+            const typeText = c.change_type_text || c.type_text || '修改';
+            const desc = c.description || `${c.employee_name} ${c.date || ''}`;
+            const timeInfo = c.date ? `${c.date} ${c.start_time || ''}-${c.end_time || ''}` : '';
+            
+            changesHtml += `
+                <div class="diff-item ${type}">
+                    <div class="diff-type ${type}">${typeText}</div>
+                    <div class="diff-content">
+                        <div class="diff-desc">${desc}</div>
+                        ${timeInfo ? `<div class="diff-time">${timeInfo}</div>` : ''}
+                        ${c.note ? `<div class="diff-note">${c.note}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        changesHtml += '</div>';
+    }
+
+    const oldVer = diffData.prev_version || '-';
+    const newVer = diffData.release_version || diffData.new_version || '-';
+
+    const modalHtml = `
+        <div class="modal show" id="diffModal">
+            <div class="modal-content" style="max-width:600px;">
+                <div class="modal-header">
+                    <h3>版本差异对比</h3>
+                    <span class="modal-close" onclick="closeDiffModal()">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div class="diff-summary">
+                        <span>第${oldVer}版 → 第${newVer}版</span>
+                        <div class="diff-stats">
+                            <span class="stat add">新增 ${summary.added || 0}</span>
+                            <span class="stat remove">删除 ${summary.removed || 0}</span>
+                            <span class="stat modify">修改 ${summary.modified || 0}</span>
+                            <span class="stat total">共 ${summary.total || changes.length} 处</span>
+                        </div>
+                    </div>
+                    ${changesHtml}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeDiffModal()">关闭</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const oldModal = document.getElementById('diffModal');
+    if (oldModal) oldModal.remove();
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function closeDiffModal() {
+    const modal = document.getElementById('diffModal');
+    if (modal) modal.remove();
 }
 
 function loadEmailLogs() {

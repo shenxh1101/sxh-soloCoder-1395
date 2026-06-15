@@ -174,3 +174,80 @@ class EmailLog(db.Model):
             'sent_at': self.sent_at.strftime('%Y-%m-%d %H:%M') if self.sent_at else '',
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else ''
         }
+
+class ScheduleChangeLog(db.Model):
+    __tablename__ = 'schedule_change_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    release_id = db.Column(db.Integer, db.ForeignKey('schedule_releases.id'))
+    store_id = db.Column(db.Integer, db.ForeignKey('stores.id'))
+    schedule_id = db.Column(db.Integer, db.ForeignKey('schedules.id'))
+    change_type = db.Column(db.String(20))
+    employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'))
+    old_employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'))
+    old_date = db.Column(db.Date)
+    old_start_time = db.Column(db.String(5))
+    old_end_time = db.Column(db.String(5))
+    new_date = db.Column(db.Date)
+    new_start_time = db.Column(db.String(5))
+    new_end_time = db.Column(db.String(5))
+    operator = db.Column(db.String(50))
+    note = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        store = Store.query.get(self.store_id) if self.store_id else None
+        employee = Employee.query.get(self.employee_id) if self.employee_id else None
+        old_employee = Employee.query.get(self.old_employee_id) if self.old_employee_id else None
+        
+        type_text = {
+            'add': '新增',
+            'remove': '删除',
+            'modify': '修改',
+            'replace': '替换',
+            'regenerate': '重新生成'
+        }.get(self.change_type, self.change_type)
+        
+        desc_parts = []
+        if self.change_type == 'add':
+            desc_parts.append(f'新增 {employee.name if employee else "未知员工"} 的班次')
+        elif self.change_type == 'remove':
+            desc_parts.append(f'删除 {employee.name if employee else "未知员工"} 的班次')
+        elif self.change_type == 'replace':
+            desc_parts.append(f'{old_employee.name if old_employee else "?"} → {employee.name if employee else "?"}')
+        elif self.change_type == 'modify':
+            desc_parts.append(f'{employee.name if employee else "未知员工"} 班次调整')
+        
+        time_part = ''
+        if self.old_date and self.old_start_time and self.old_end_time:
+            time_part += f'{self.old_date} {self.old_start_time}-{self.old_end_time}'
+        if self.new_date and self.new_start_time and self.new_end_time:
+            if time_part:
+                time_part += ' → '
+            time_part += f'{self.new_date} {self.new_start_time}-{self.new_end_time}'
+        if time_part:
+            desc_parts.append(time_part)
+        
+        return {
+            'id': self.id,
+            'release_id': self.release_id,
+            'store_id': self.store_id,
+            'store_name': store.name if store else '',
+            'schedule_id': self.schedule_id,
+            'change_type': self.change_type,
+            'change_type_text': type_text,
+            'employee_id': self.employee_id,
+            'employee_name': employee.name if employee else '',
+            'old_employee_id': self.old_employee_id,
+            'old_employee_name': old_employee.name if old_employee else '',
+            'old_date': self.old_date.isoformat() if self.old_date else '',
+            'old_start_time': self.old_start_time or '',
+            'old_end_time': self.old_end_time or '',
+            'new_date': self.new_date.isoformat() if self.new_date else '',
+            'new_start_time': self.new_start_time or '',
+            'new_end_time': self.new_end_time or '',
+            'operator': self.operator or '',
+            'note': self.note or '',
+            'description': ' '.join(desc_parts),
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else ''
+        }

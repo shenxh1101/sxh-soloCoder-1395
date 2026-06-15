@@ -14,6 +14,7 @@
                 <h1>🏪 {{ store.name }} - 门店排班视图</h1>
                 <p style="font-size: 13px; opacity: 0.9; margin-top: 4px;">
                     {{ store.address }} | 营业时间: {{ store.open_time }} - {{ store.close_time }} | 最低在岗: {{ store.min_staff }}人
+                    <span class="published-badge">✓ 已发布版本</span>
                 </p>
             </div>
             <div class="header-actions">
@@ -64,6 +65,13 @@
                 <div class="sidebar-section">
                     <h3>⚡ 快速操作</h3>
                     <p class="tip" style="font-size: 12px;">点击排班单元格中的员工可快速替换</p>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>📧 邮件发送记录</h3>
+                    <div id="storeEmailLogs" class="store-email-logs">
+                        <p class="empty-tip" style="padding: 10px; font-size: 11px;">加载中...</p>
+                    </div>
                 </div>
             </aside>
 

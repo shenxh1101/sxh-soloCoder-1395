@@ -5,6 +5,7 @@ let currentStoreData = null;
 document.addEventListener('DOMContentLoaded', function() {
     initDatePickers();
     loadStoreView();
+    loadStoreEmailLogs();
 });
 
 function initDatePickers() {
@@ -33,7 +34,7 @@ function loadStoreView() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
 
-    fetch(`/api/store-view/${storeId}?start_date=${startDate}&end_date=${endDate}`)
+    fetch(`/api/store-view/${storeId}?start_date=${startDate}&end_date=${endDate}&only_published=true`)
         .then(r => r.json())
         .then(data => {
             if (data.error) {
@@ -324,6 +325,9 @@ function sendStoreEmail() {
     .then(r => r.json())
     .then(data => {
         showEmailStatus(data);
+        setTimeout(() => {
+            loadStoreEmailLogs();
+        }, 500);
     })
     .catch(err => {
         showToast('发送邮件失败', 'error');
@@ -370,4 +374,48 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
+}
+
+function loadStoreEmailLogs() {
+    fetch(`/api/email-logs?store_id=${storeId}&limit=10`)
+        .then(r => r.json())
+        .then(data => {
+            renderStoreEmailLogs(data);
+        })
+        .catch(err => {
+            document.getElementById('storeEmailLogs').innerHTML = 
+                '<p class="empty-tip" style="padding: 10px; font-size: 11px; color: #ff4d4f;">加载失败</p>';
+        });
+}
+
+function renderStoreEmailLogs(logs) {
+    const container = document.getElementById('storeEmailLogs');
+
+    if (!logs || logs.length === 0) {
+        container.innerHTML = '<p class="empty-tip" style="padding: 10px; font-size: 11px;">暂无发送记录</p>';
+        return;
+    }
+
+    let html = '<div class="store-email-log-list">';
+    logs.forEach(log => {
+        html += `
+            <div class="store-email-log-item">
+                <div class="store-email-log-header">
+                    <span class="status-tag ${log.status}">${log.status_text}</span>
+                    <span class="store-email-log-time">${log.sent_at || ''}</span>
+                </div>
+                <div class="store-email-log-recipient" title="${log.recipient || ''}">
+                    ${log.recipient || '-'}
+                </div>
+                ${log.error_message ? `<div class="store-email-log-error" title="${log.error_message}">${log.error_message}</div>` : ''}
+            </div>
+        `;
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+}
+
+function refreshStoreEmailLogs() {
+    loadStoreEmailLogs();
 }

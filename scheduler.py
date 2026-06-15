@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, date
-from models import Store, Employee, Schedule, EmployeeAvailability
+from models import Store, Employee, Schedule, EmployeeAvailability, ScheduleChangeLog
 import random
 from collections import defaultdict
 
@@ -422,7 +422,7 @@ class Scheduler:
             'by_store': dict(by_store)
         }
 
-    def get_store_view(self, store_id, start_date_str, end_date_str):
+    def get_store_view(self, store_id, start_date_str, end_date_str, only_published=True):
         store = Store.query.get(store_id)
         if not store:
             return None
@@ -433,12 +433,16 @@ class Scheduler:
         result = {
             'store': store.to_dict(),
             'date_range': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
+            'only_published': only_published,
             'days': []
         }
 
         current = start_date
         while current <= end_date:
-            scheds = Schedule.query.filter_by(store_id=store_id, date=current).all()
+            query = Schedule.query.filter_by(store_id=store_id, date=current)
+            if only_published:
+                query = query.filter_by(status='published')
+            scheds = query.all()
             slots = self._get_time_slots(store, scheds)
 
             shortages = [s for s in slots if not s['meets_minimum']]
@@ -575,24 +579,46 @@ class Scheduler:
             c['rank'] = i + 1
         return candidates
 
-    def replace_schedule(self, schedule_id, new_employee_id):
+    def replace_schedule(self, schedule_id, new_employee_id, operator='运营'):
         old_sched = Schedule.query.get(schedule_id)
         if not old_sched:
             return {'success': False, 'error': '排班记录不存在'}
 
+        old_emp_id = old_sched.employee_id
+        
         check = self.check_conflict(
             new_employee_id, old_sched.store_id,
             old_sched.date.isoformat(),
             old_sched.start_time, old_sched.end_time,
-            exclude_schedule_id=schedule_id
+            exclude_schedule_id=schedule_id,
+            check_staff_sufficiency=True
         )
         if check['has_conflict']:
             return {'success': False, 'conflicts': check['conflicts']}
 
-        old_emp = Employee.query.get(old_sched.employee_id)
+        old_emp = Employee.query.get(old_emp_id)
         new_emp = Employee.query.get(new_employee_id)
 
         old_sched.employee_id = new_employee_id
+        
+        change_log = ScheduleChangeLog(
+            release_id=old_sched.release_id,
+            store_id=old_sched.store_id,
+            schedule_id=old_sched.id,
+            change_type='replace',
+            employee_id=new_employee_id,
+            old_employee_id=old_emp_id,
+            old_date=old_sched.date,
+            old_start_time=old_sched.start_time,
+            old_end_time=old_sched.end_time,
+            new_date=old_sched.date,
+            new_start_time=old_sched.start_time,
+            new_end_time=old_sched.end_time,
+            operator=operator,
+            note='手动替换员工'
+        )
+        self.db.session.add(change_log)
+        
         self.db.session.commit()
 
         return {
