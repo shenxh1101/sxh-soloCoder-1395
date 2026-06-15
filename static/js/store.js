@@ -268,36 +268,61 @@ function closeReplaceModal() {
 
 function confirmReplace() {
     const scheduleId = document.getElementById('replaceScheduleId').value;
+    const confirmBtn = document.getElementById('confirmReplaceBtn');
 
     if (!selectedCandidateId) {
         showToast('请选择候补员工', 'warning');
         return;
     }
 
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '替换中...';
+
     fetch(`/api/schedules/${scheduleId}/replace`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_employee_id: selectedCandidateId })
+        body: JSON.stringify({ 
+            new_employee_id: selectedCandidateId,
+            operator: '店长',
+            check_staff_sufficiency: true
+        })
     })
     .then(r => {
         if (r.status === 409) {
             return r.json().then(data => {
-                showToast(data.conflicts ? data.conflicts[0].message : '替换失败，存在冲突', 'error');
+                const conflictMsg = data.conflicts && data.conflicts.length > 0 
+                    ? data.conflicts.map(c => c.message).join('；') 
+                    : '替换失败，存在冲突或会导致人员空档';
+                showToast(conflictMsg, 'error');
+                throw new Error(conflictMsg);
             });
         }
         return r.json();
     })
     .then(data => {
         if (data && data.success) {
-            showToast('替换成功', 'success');
+            showToast('替换成功，数据已同步', 'success');
             closeReplaceModal();
-            loadStoreView();
+            Promise.all([
+                loadStoreView(),
+                new Promise(resolve => setTimeout(resolve, 300))
+            ]).then(() => {
+                showToast('门店视图、本周汇总已自动更新', 'info');
+            });
         } else if (data && data.error) {
             showToast(data.error, 'error');
+        } else {
+            showToast('替换失败', 'error');
         }
     })
     .catch(err => {
-        showToast('替换失败', 'error');
+        if (err.message !== '替换失败，存在冲突或会导致人员空档') {
+            showToast('替换失败，请重试', 'error');
+        }
+    })
+    .finally(() => {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '确认替换';
     });
 }
 
@@ -398,16 +423,29 @@ function renderStoreEmailLogs(logs) {
 
     let html = '<div class="store-email-log-list">';
     logs.forEach(log => {
+        const statusBadge = `<span class="status-tag ${log.status}">${log.status_text}</span>`;
+        const noteHtml = log.error_message ? 
+            `<div class="store-email-log-error" title="${log.error_message}">失败: ${log.error_message}</div>` : '';
+        const weekHtml = log.week_range ? 
+            `<div class="store-email-log-week">周次: ${log.week_range}</div>` : '';
+        const senderHtml = log.sender ? 
+            `<div class="store-email-log-sender">发送人: ${log.sender}</div>` : '';
+        const versionHtml = log.only_published ? 
+            '<span style="color:#52c41a;font-size:10px;">[已发布版]</span>' : 
+            '<span style="color:#faad14;font-size:10px;">[含草稿]</span>';
+        
         html += `
             <div class="store-email-log-item">
                 <div class="store-email-log-header">
-                    <span class="status-tag ${log.status}">${log.status_text}</span>
+                    ${statusBadge}
                     <span class="store-email-log-time">${log.sent_at || ''}</span>
                 </div>
                 <div class="store-email-log-recipient" title="${log.recipient || ''}">
-                    ${log.recipient || '-'}
+                    ${log.recipient || '-'} ${versionHtml}
                 </div>
-                ${log.error_message ? `<div class="store-email-log-error" title="${log.error_message}">${log.error_message}</div>` : ''}
+                ${weekHtml}
+                ${senderHtml}
+                ${noteHtml}
             </div>
         `;
     });

@@ -952,9 +952,12 @@ function renderReleases(releases) {
 
         html += `
             <div class="release-card ${r.status}">
-                <div class="release-card-header">
+                <div class="release-card-header" onclick="toggleReleaseDetails(${r.id})" style="cursor:pointer;">
                     <h4>${r.store_name}</h4>
-                    <span class="release-status ${r.status}">${r.status_text}</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="release-status ${r.status}">${r.status_text}</span>
+                        <span class="release-toggle-icon" id="toggle-icon-${r.id}">▼</span>
+                    </div>
                 </div>
                 <div class="release-meta">
                     <div>版本: <span>第${r.version}版</span></div>
@@ -966,6 +969,10 @@ function renderReleases(releases) {
                     ${r.published_at ? `<div>发布时间: <span>${r.published_at}</span></div>` : ''}
                 </div>
                 ${actions}
+                <div class="release-details" id="release-details-${r.id}" style="display:none;">
+                    <div class="release-details-loading" id="release-loading-${r.id}">加载变更明细...</div>
+                    <div class="release-details-content" id="release-content-${r.id}"></div>
+                </div>
             </div>
         `;
     });
@@ -1050,6 +1057,86 @@ function regenerateRelease(releaseId) {
     .catch(err => {
         showToast('重新生成失败', 'error');
     });
+}
+
+function toggleReleaseDetails(releaseId) {
+    const details = document.getElementById(`release-details-${releaseId}`);
+    const icon = document.getElementById(`toggle-icon-${releaseId}`);
+    const content = document.getElementById(`release-content-${releaseId}`);
+    const loading = document.getElementById(`release-loading-${releaseId}`);
+    
+    if (details.style.display === 'none') {
+        details.style.display = 'block';
+        icon.textContent = '▲';
+        
+        if (!content.dataset.loaded) {
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            
+            fetch(`/api/change-logs?release_id=${releaseId}`)
+                .then(r => r.json())
+                .then(data => {
+                    renderReleaseDetails(releaseId, data);
+                    content.dataset.loaded = 'true';
+                })
+                .catch(err => {
+                    content.innerHTML = '<p class="empty-tip" style="color:#ff4d4f;">加载变更明细失败</p>';
+                })
+                .finally(() => {
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
+                });
+        }
+    } else {
+        details.style.display = 'none';
+        icon.textContent = '▼';
+    }
+}
+
+function renderReleaseDetails(releaseId, logs) {
+    const content = document.getElementById(`release-content-${releaseId}`);
+    
+    if (!logs || logs.length === 0) {
+        content.innerHTML = '<p class="empty-tip">该版本暂无变更记录</p>';
+        return;
+    }
+    
+    const typeColors = {
+        'add': '#52c41a',
+        'remove': '#ff4d4f',
+        'modify': '#1890ff',
+        'replace': '#faad14'
+    };
+    
+    const typeTexts = {
+        'add': '新增',
+        'remove': '删除',
+        'modify': '调整',
+        'replace': '替换'
+    };
+    
+    let html = `<div class="change-logs-list">`;
+    logs.forEach(log => {
+        const type = log.change_type || 'modify';
+        html += `
+            <div class="change-log-item">
+                <div class="change-log-header">
+                    <span class="change-log-type" style="background:${typeColors[type]}20;color:${typeColors[type]};">
+                        ${typeTexts[type] || log.change_type_text || '变更'}
+                    </span>
+                    <span class="change-log-time">${log.created_at || ''}</span>
+                    <span class="change-log-operator">${log.operator || '运营'}</span>
+                </div>
+                <div class="change-log-desc">
+                    ${log.description || ''}
+                </div>
+                ${log.note ? `<div class="change-log-note">${log.note}</div>` : ''}
+            </div>
+        `;
+    });
+    html += '</div>';
+    
+    content.innerHTML = html;
 }
 
 function showReleaseDiff(releaseId) {
@@ -1161,23 +1248,29 @@ function renderEmailLogs(logs) {
         <div class="email-log-list">
             <div class="email-log-item header">
                 <div>门店</div>
+                <div>周次</div>
                 <div>收件人</div>
-                <div>主题</div>
                 <div>状态</div>
+                <div>发送人</div>
                 <div>发送时间</div>
+                <div>备注</div>
             </div>
     `;
 
     logs.forEach(log => {
+        const statusBadge = `<span class="status-tag ${log.status}">${log.status_text}</span>`;
+        const errorNote = log.error_message ? `<span style="color:#ff4d4f;font-size:11px;">失败: ${log.error_message}</span>` : 
+                            (log.only_published ? '<span style="color:#52c41a;font-size:11px;">已发布版</span>' : '<span style="color:#faad14;font-size:11px;">含草稿</span>');
+        
         html += `
             <div class="email-log-item">
                 <div class="email-log-store">${log.store_name || '-'}</div>
-                <div class="email-log-recipient">${log.recipient || '-'}</div>
-                <div class="email-log-subject" title="${log.subject || ''}">${log.subject || '-'}</div>
-                <div class="email-log-status">
-                    <span class="status-tag ${log.status}">${log.status_text}</span>
-                </div>
+                <div class="email-log-week">${log.week_range || '-'}</div>
+                <div class="email-log-recipient" title="${log.recipient || ''}">${log.recipient || '-'}</div>
+                <div class="email-log-status">${statusBadge}</div>
+                <div class="email-log-sender">${log.sender || '-'}</div>
                 <div class="email-log-time">${log.sent_at || '-'}</div>
+                <div class="email-log-note">${errorNote}</div>
             </div>
         `;
     });

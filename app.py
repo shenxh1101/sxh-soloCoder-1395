@@ -287,12 +287,13 @@ def get_store_view(store_id):
 def get_summary():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
+    only_published = request.args.get('only_published', 'true').lower() == 'true'
 
     if not start_date or not end_date:
         return jsonify({'error': '请提供开始和结束日期'}), 400
 
     scheduler = Scheduler(db)
-    summary = scheduler.get_summary(start_date, end_date)
+    summary = scheduler.get_summary(start_date, end_date, only_published=only_published)
     return jsonify(summary)
 
 @app.route('/api/workhours', methods=['GET'])
@@ -316,11 +317,12 @@ def export_excel():
     end_date = request.args.get('end_date')
     store_id = request.args.get('store_id', type=int)
     mode = request.args.get('mode', 'full')
+    only_published = request.args.get('only_published', 'true').lower() == 'true'
 
     if not start_date or not end_date:
         return jsonify({'error': '请提供开始和结束日期'}), 400
 
-    file_path = export_utils.export_to_excel(start_date, end_date, store_id=store_id, mode=mode)
+    file_path = export_utils.export_to_excel(start_date, end_date, store_id=store_id, mode=mode, only_published=only_published)
 
     if store_id:
         store = Store.query.get(store_id)
@@ -336,11 +338,13 @@ def send_email():
     start_date = data.get('start_date')
     end_date = data.get('end_date')
     store_id = data.get('store_id')
+    only_published = data.get('only_published', True)
+    sender = data.get('sender', '运营')
 
     if not start_date or not end_date:
         return jsonify({'error': '请提供开始和结束日期'}), 400
 
-    result = email_utils.send_schedule_email(start_date, end_date, store_id)
+    result = email_utils.send_schedule_email(start_date, end_date, store_id, only_published=only_published)
     return jsonify(result)
 
 @app.route('/api/releases', methods=['GET'])
@@ -724,6 +728,31 @@ def init_db():
             db.session.execute(text("ALTER TABLE schedules ADD COLUMN release_id INTEGER"))
             db.session.commit()
             print('已添加release_id列到schedules表')
+        except Exception as e:
+            pass
+        
+        # 数据库迁移：给email_logs表添加新字段
+        try:
+            from sqlalchemy import text
+            db.session.execute(text("ALTER TABLE email_logs ADD COLUMN week_range VARCHAR(50)"))
+            db.session.commit()
+            print('已添加week_range列到email_logs表')
+        except Exception as e:
+            pass
+        
+        try:
+            from sqlalchemy import text
+            db.session.execute(text("ALTER TABLE email_logs ADD COLUMN sender VARCHAR(50) DEFAULT '运营'"))
+            db.session.commit()
+            print('已添加sender列到email_logs表')
+        except Exception as e:
+            pass
+        
+        try:
+            from sqlalchemy import text
+            db.session.execute(text("ALTER TABLE email_logs ADD COLUMN only_published BOOLEAN DEFAULT 1"))
+            db.session.commit()
+            print('已添加only_published列到email_logs表')
         except Exception as e:
             pass
         

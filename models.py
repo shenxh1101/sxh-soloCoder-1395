@@ -159,6 +159,9 @@ class EmailLog(db.Model):
     error_message = db.Column(db.String(500))
     sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    week_range = db.Column(db.String(50))
+    sender = db.Column(db.String(50), default='运营')
+    only_published = db.Column(db.Boolean, default=True)
     
     def to_dict(self):
         store = Store.query.get(self.store_id) if self.store_id else None
@@ -172,7 +175,10 @@ class EmailLog(db.Model):
             'status_text': {'success': '成功', 'simulated': '模拟发送', 'no_email': '无邮箱', 'error': '失败', 'pending': '待发送'}[self.status],
             'error_message': self.error_message,
             'sent_at': self.sent_at.strftime('%Y-%m-%d %H:%M') if self.sent_at else '',
-            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else ''
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
+            'week_range': self.week_range or '',
+            'sender': self.sender or '',
+            'only_published': self.only_published
         }
 
 class ScheduleChangeLog(db.Model):

@@ -16,14 +16,14 @@ SMTP_USE_TLS = True
 SENDER_NAME = '智能排班系统'
 SENDER_EMAIL = 'noreply@example.com'
 
-def send_schedule_email(start_date_str, end_date_str, store_id=None):
+def send_schedule_email(start_date_str, end_date_str, store_id=None, only_published=True, sender='运营'):
     stores = Store.query.all()
     if store_id:
         stores = [s for s in stores if s.id == store_id]
 
     results = []
     for store in stores:
-        result = _send_single_store_email(store, start_date_str, end_date_str)
+        result = _send_single_store_email(store, start_date_str, end_date_str, only_published=only_published, sender=sender)
         results.append(result)
 
     success = len([r for r in results if r['success']])
@@ -35,7 +35,7 @@ def send_schedule_email(start_date_str, end_date_str, store_id=None):
         'results': results
     }
 
-def _send_single_store_email(store, start_date_str, end_date_str):
+def _send_single_store_email(store, start_date_str, end_date_str, only_published=True, sender='运营'):
     if not store.manager_email:
         result = {
             'store_id': store.id,
@@ -46,12 +46,12 @@ def _send_single_store_email(store, start_date_str, end_date_str):
             'message': '未设置店长邮箱',
             'sent_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-        _log_email(store, start_date_str, end_date_str, 'no_email', '未设置店长邮箱')
+        _log_email(store, start_date_str, end_date_str, 'no_email', '未设置店长邮箱', only_published=only_published, sender=sender)
         return result
 
     try:
-        excel_path = export_utils.export_to_excel(start_date_str, end_date_str, store_id=store.id, mode='week')
-        html_body = export_utils.get_store_summary_html(store, start_date_str, end_date_str)
+        excel_path = export_utils.export_to_excel(start_date_str, end_date_str, store_id=store.id, mode='week', only_published=only_published)
+        html_body = export_utils.get_store_summary_html(store, start_date_str, end_date_str, only_published=only_published)
 
         msg = MIMEMultipart('alternative')
         msg['From'] = f'{SENDER_NAME} <{SENDER_EMAIL}>'
@@ -78,7 +78,7 @@ def _send_single_store_email(store, start_date_str, end_date_str):
             message = f'模拟SMTP未连接，已记录为待发送状态（{str(e)[:30]}）'
             success = True
 
-        _log_email(store, start_date_str, end_date_str, status, message)
+        _log_email(store, start_date_str, end_date_str, status, message, only_published=only_published, sender=sender)
 
         return {
             'store_id': store.id,
@@ -91,7 +91,7 @@ def _send_single_store_email(store, start_date_str, end_date_str):
         }
 
     except Exception as e:
-        _log_email(store, start_date_str, end_date_str, 'error', str(e))
+        _log_email(store, start_date_str, end_date_str, 'error', str(e), only_published=only_published, sender=sender)
         return {
             'store_id': store.id,
             'store_name': store.name,
@@ -115,7 +115,7 @@ def _real_send(msg):
         print(f'[邮件模拟] To: {msg["To"]} | Subject: {msg["Subject"]}')
         raise
 
-def _log_email(store, start_date, end_date, status, message):
+def _log_email(store, start_date, end_date, status, message, only_published=True, sender='运营'):
     log_file = os.path.join(os.path.dirname(__file__), 'email_log.txt')
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     line = f'[{timestamp}] {store.name} -> {store.manager_email} | {status} | {message}\n'
@@ -123,13 +123,17 @@ def _log_email(store, start_date, end_date, status, message):
         f.write(line)
     
     try:
+        week_range = f'{start_date} ~ {end_date}'
         log = EmailLog(
             store_id=store.id,
             recipient=store.manager_email or '',
             subject=f'[{store.name}] 排班表 ({start_date} ~ {end_date})',
             status=status,
             error_message=message if status in ['error', 'no_email'] else None,
-            sent_at=datetime.utcnow()
+            sent_at=datetime.utcnow(),
+            week_range=week_range,
+            sender=sender,
+            only_published=only_published
         )
         db.session.add(log)
         db.session.commit()

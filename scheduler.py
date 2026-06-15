@@ -628,7 +628,7 @@ class Scheduler:
             'new_employee': new_emp.name if new_emp else ''
         }
 
-    def get_summary(self, start_date_str, end_date_str):
+    def get_summary(self, start_date_str, end_date_str, only_published=True):
         start_date = self._parse_date(start_date_str)
         end_date = self._parse_date(end_date_str)
         stores = Store.query.all()
@@ -642,7 +642,10 @@ class Scheduler:
                 'stores': []
             }
             for store in stores:
-                scheds = Schedule.query.filter_by(store_id=store.id, date=current_date).all()
+                query = Schedule.query.filter_by(store_id=store.id, date=current_date)
+                if only_published:
+                    query = query.filter_by(status='published')
+                scheds = query.all()
                 time_slots = self._get_time_slots(store, scheds)
                 store_data = {
                     'store_id': store.id,
@@ -651,11 +654,11 @@ class Scheduler:
                     'time_slots': time_slots,
                     'total_employees': len(set(s.employee_id for s in scheds)),
                     'senior_count': len(set(s.employee_id for s in scheds if s.employee.skill_level == '高级')),
-                    'has_shortage': any(not s['meets_minimum'] for s in time_slots)
+                    'has_shortage': any(not s['meets_minimum'] for s in time_slots),
+                    'only_published': only_published
                 }
                 day_data['stores'].append(store_data)
             summary.append(day_data)
-            current_date += timedelta(days=1)
         return summary
 
     def _get_time_slots(self, store, schedules):

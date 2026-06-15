@@ -55,10 +55,10 @@ def _time_slots(store, schedules):
         cur = nxt
     return slots
 
-def _write_summary_sheet(wb, start_date, end_date, stores):
+def _write_summary_sheet(wb, start_date, end_date, stores, only_published=True):
     ws = wb.create_sheet('排班汇总', 0)
     ws.merge_cells('A1:I1')
-    ws['A1'] = f'员工排班汇总表 ({start_date.isoformat()} 至 {end_date.isoformat()})'
+    ws['A1'] = f'员工排班汇总表 ({start_date.isoformat()} 至 {end_date.isoformat()}){" [已发布版]" if only_published else ""}'
     _apply_style(ws['A1'], font=Font(bold=True, size=16), align=CENTER, border=False)
     ws.row_dimensions[1].height = 30
 
@@ -72,7 +72,10 @@ def _write_summary_sheet(wb, start_date, end_date, stores):
     while cur_date <= end_date:
         day_name = ['周一','周二','周三','周四','周五','周六','周日'][cur_date.weekday()]
         for store in stores:
-            scheds = Schedule.query.filter_by(store_id=store.id, date=cur_date).all()
+            query = Schedule.query.filter_by(store_id=store.id, date=cur_date)
+            if only_published:
+                query = query.filter_by(status='published')
+            scheds = query.all()
             slots = _time_slots(store, scheds)
             for i, slot in enumerate(slots):
                 names = '、'.join([s['name'] for s in slot['staff']]) or '-'
@@ -101,10 +104,10 @@ def _write_summary_sheet(wb, start_date, end_date, stores):
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
-def _write_store_sheet(wb, store, start_date, end_date, detailed=True):
+def _write_store_sheet(wb, store, start_date, end_date, detailed=True, only_published=True):
     ws = wb.create_sheet(f'{store.name}排班')
     ws.merge_cells('A1:J1')
-    ws['A1'] = f'{store.name} 排班表 ({start_date.isoformat()} 至 {end_date.isoformat()})'
+    ws['A1'] = f'{store.name} 排班表 ({start_date.isoformat()} 至 {end_date.isoformat()}){" [已发布版]" if only_published else ""}'
     _apply_style(ws['A1'], font=Font(bold=True, size=15), align=CENTER, border=False)
     ws.row_dimensions[1].height = 28
 
@@ -138,7 +141,10 @@ def _write_store_sheet(wb, store, start_date, end_date, detailed=True):
 
         cur_date = start_date
         for ci in range(2, len(date_headers) + 1):
-            scheds = Schedule.query.filter_by(store_id=store.id, date=cur_date).all()
+            query = Schedule.query.filter_by(store_id=store.id, date=cur_date)
+            if only_published:
+                query = query.filter_by(status='published')
+            scheds = query.all()
             cur_time = datetime.strptime(tm, '%H:%M')
             staff = []
             for s in scheds:
@@ -186,9 +192,12 @@ def _write_store_sheet(wb, store, start_date, end_date, detailed=True):
             total_h = 0
             cur_date = start_date
             for ci in range(2, len(date_headers) + 1):
-                sched = Schedule.query.filter_by(
+                query = Schedule.query.filter_by(
                     employee_id=emp.id, store_id=store.id, date=cur_date
-                ).first()
+                )
+                if only_published:
+                    query = query.filter_by(status='published')
+                sched = query.first()
                 if sched:
                     val = f'{sched.start_time}-{sched.end_time}'
                     dur = sched._get_duration()
@@ -248,7 +257,7 @@ def _write_workhours_sheet(wb, start_date, end_date):
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
-def export_to_excel(start_date_str, end_date_str, store_id=None, mode='full'):
+def export_to_excel(start_date_str, end_date_str, store_id=None, mode='full', only_published=True):
     start_date = _parse(start_date_str)
     end_date = _parse(end_date_str)
 
@@ -263,17 +272,17 @@ def export_to_excel(start_date_str, end_date_str, store_id=None, mode='full'):
 
     if mode == 'simple':
         for s in stores:
-            _write_simple_week_sheet(wb, s, start_date, end_date)
+            _write_simple_week_sheet(wb, s, start_date, end_date, only_published=only_published)
     elif mode == 'week' or mode == 'full':
-        _write_summary_sheet(wb, start_date, end_date, stores)
+        _write_summary_sheet(wb, start_date, end_date, stores, only_published=only_published)
         for s in stores:
-            _write_store_sheet(wb, s, start_date, end_date, detailed=True)
+            _write_store_sheet(wb, s, start_date, end_date, detailed=True, only_published=only_published)
         if not store_id:
             _write_workhours_sheet(wb, start_date, end_date)
     else:
-        _write_summary_sheet(wb, start_date, end_date, stores)
+        _write_summary_sheet(wb, start_date, end_date, stores, only_published=only_published)
         for s in stores:
-            _write_store_sheet(wb, s, start_date, end_date, detailed=True)
+            _write_store_sheet(wb, s, start_date, end_date, detailed=True, only_published=only_published)
         if not store_id:
             _write_workhours_sheet(wb, start_date, end_date)
 
@@ -281,7 +290,7 @@ def export_to_excel(start_date_str, end_date_str, store_id=None, mode='full'):
     wb.save(file_path)
     return file_path
 
-def _write_simple_week_sheet(wb, store, start_date, end_date):
+def _write_simple_week_sheet(wb, store, start_date, end_date, only_published=True):
     ws = wb.create_sheet(f'{store.name}_本周排班')
     
     day_count = (end_date - start_date).days + 1
@@ -306,7 +315,10 @@ def _write_simple_week_sheet(wb, store, start_date, end_date):
     emp_scheds = {}
     cur = start_date
     while cur <= end_date:
-        scheds = Schedule.query.filter_by(store_id=store.id, date=cur).all()
+        query = Schedule.query.filter_by(store_id=store.id, date=cur)
+        if only_published:
+            query = query.filter_by(status='published')
+        scheds = query.all()
         for s in scheds:
             if s.employee_id not in emp_scheds:
                 emp_scheds[s.employee_id] = {'name': s.employee.name, 'skill': s.employee.skill_level, 'days': {}}
@@ -346,7 +358,10 @@ def _write_simple_week_sheet(wb, store, start_date, end_date):
     _apply_style(ws.cell(row=row, column=2), fill=SUBHEADER_FILL, align=CENTER)
     
     for i, (date, _) in enumerate(days):
-        scheds = Schedule.query.filter_by(store_id=store.id, date=date).all()
+        query = Schedule.query.filter_by(store_id=store.id, date=date)
+        if only_published:
+            query = query.filter_by(status='published')
+        scheds = query.all()
         emp_count = len(set(s.employee_id for s in scheds))
         cell = ws.cell(row=row, column=3 + i, value=emp_count)
         _apply_style(cell, font=Font(bold=True), fill=SUBHEADER_FILL, align=CENTER)
@@ -359,7 +374,10 @@ def _write_simple_week_sheet(wb, store, start_date, end_date):
     _apply_style(ws.cell(row=row, column=2), align=CENTER)
     
     for i, (date, _) in enumerate(days):
-        scheds = Schedule.query.filter_by(store_id=store.id, date=date).all()
+        query = Schedule.query.filter_by(store_id=store.id, date=date)
+        if only_published:
+            query = query.filter_by(status='published')
+        scheds = query.all()
         slots = _time_slots(store, scheds)
         shortages = [s['time'] for s in slots if not s['meets_minimum']]
         cell_val = '、'.join(shortages) if shortages else '✓ 正常'
@@ -379,12 +397,12 @@ def _write_simple_week_sheet(wb, store, start_date, end_date):
     for r in range(4, row):
         ws.row_dimensions[r].height = 24
 
-def get_store_summary_html(store, start_date_str, end_date_str):
+def get_store_summary_html(store, start_date_str, end_date_str, only_published=True):
     from scheduler import Scheduler
     start_date = _parse(start_date_str)
     end_date = _parse(end_date_str)
     scheduler = Scheduler(db)
-    data = scheduler.get_store_view(store.id, start_date_str, end_date_str)
+    data = scheduler.get_store_view(store.id, start_date_str, end_date_str, only_published=only_published)
     if not data:
         return ''
 
